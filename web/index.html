@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Radio Locale IA</title>
+    <title>Radio DEV</title>
     <style>
         /* Variables de design pour une maintenance facile */
         :root {
@@ -179,7 +179,8 @@
         }
 
         #volume-slider {
-            -webkit-appearance: none;
+            -webkit-appearance: none; /* Pour Chrome, Safari, Edge */
+            appearance: none;         /* Propriété standard pour Firefox et futurs navigateurs */
             width: 100%;
             height: 4px;
             background: #333;
@@ -188,6 +189,7 @@
             cursor: pointer;
         }
 
+        /* --- Style du curseur pour WebKit (Chrome, Safari, Edge) --- */
         #volume-slider::-webkit-slider-thumb {
             -webkit-appearance: none;
             appearance: none;
@@ -197,9 +199,26 @@
             border-radius: 50%;
             box-shadow: 0 0 10px rgba(3, 218, 198, 0.5);
             transition: transform 0.2s;
+            border: none; /* Important pour Firefox */
         }
 
+        /* --- Style du curseur pour Firefox --- */
+        #volume-slider::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            background: var(--secondary);
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(3, 218, 198, 0.5);
+            transition: transform 0.2s;
+            border: none;
+        }
+
+        /* --- État Hover pour les deux moteurs --- */
         #volume-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.3);
+        }
+
+        #volume-slider::-moz-range-thumb:hover {
             transform: scale(1.3);
         }
     </style>
@@ -269,6 +288,10 @@ let podcastStartedAt     = 0;
 let userOffsetCorrection = 0;
 let lastText             = "";
 let maxReachedTime       = 0;
+let pendingMetadata = null; // Stocke le prochain morceau avant l'affichage
+let lastTrackTitle = "";
+let maxReachedProgress = 0; 
+let isFetching = false;
 
 function dbg(msg) {
     debugDiv.textContent = msg;
@@ -307,15 +330,13 @@ let pendingText = ""; // Verrou de contenu pour empêcher les retours en arrièr
 function startSync() {
     if (syncTimer) clearInterval(syncTimer);
 
-    podcastStartedAt = new Date(currentPodcastData.startedAt).getTime() / 1000;
-    syncPointClient  = Date.now() / 1000;
-    syncPointServer  = currentPodcastData.serverNow;
-    maxReachedTime   = 0; // Reset au démarrage
-
+    // On utilise systématiquement les données les plus fraîches du serveur
     syncTimer = setInterval(() => {
-        if (!currentPodcastData || !cuesIndex.length) return;
+        // Sécurité : on attend d'avoir des données et des sous-titres chargés
+        if (!pendingMetadata || !cuesIndex.length) return;
 
         const now = Date.now() / 1000;
+        const podcastStart = new Date(pendingMetadata.startedAt).getTime() / 1000;
         const serverNowEstimate = syncPointServer + (now - syncPointClient);
         
         let bufferDelay = 0;
@@ -323,15 +344,14 @@ function startSync() {
             bufferDelay = audio.buffered.end(audio.buffered.length - 1) - audio.currentTime;
         }
 
-        const rel = serverNowEstimate - podcastStartedAt - bufferDelay + userOffsetCorrection;
+        // Calcul de la position relative (même logique que dans animate)
+        const rel = serverNowEstimate - podcastStart - bufferDelay + userOffsetCorrection;
 
-        // --- SÉCURITÉ ANTI-FLASHBACK ---
-        // On ne permet pas à la timeline de "reculer". 
-        // Si 'rel' est inférieur au temps max déjà atteint, on utilise le temps max.
+        // Sécurité anti-retour
         const stableRel = Math.max(rel, maxReachedTime);
         maxReachedTime = stableRel; 
-        // -------------------------------
 
+        // Recherche du sous-titre correspondant au temps actuel
         const currentCue = cuesIndex.find(cue => stableRel >= cue.start && stableRel <= cue.end);
         const foundText = currentCue ? currentCue.text : "";
 
@@ -339,7 +359,7 @@ function startSync() {
             updateSubtitles(foundText);
         }
 
-        dbg(`Pos: ${stableRel.toFixed(2)}s | Buffer: ${bufferDelay.toFixed(1)}s`);
+        dbg(`Synchro Podcast: ${stableRel.toFixed(1)}s`);
     }, 100);
 }
 
@@ -383,57 +403,92 @@ function togglePlay() {
     }
 }
 
-async function updateMetadata() {
+async function fetchMetadata() {
+    if (isFetching) return;
+    isFetching = true;
+    
     try {
         const res = await fetch('/podcasts/podcast-status.json?t=' + Date.now());
         const data = await res.json();
-        currentPodcastData = data;
+        
+        // Mise à jour des références temporelles et de l'objet global
+        pendingMetadata = data;
+        currentPodcastData = data; // On synchronise ici aussi pour startSync
+        syncPointServer = data.serverNow;
+        syncPointClient = Date.now() / 1000;
 
-        document.getElementById('metadata').textContent = data.isPodcast ? '🎙️ Podcast en cours' : 'Musique';
-        title.innerText = data.title || "Titre inconnu";
-        artist.innerText = data.artist || "Artiste inconnu";
-        album.innerText = data.album || "Album inconnu";
-        time.innerText = data.time || "--:--";
-        duration.innerText = data.duration || "--:--";
+        // Mise à jour immédiate de l'interface si le titre change
+        if (data.title !== lastTrackTitle) {
+            updateUI(data);
+        }
 
+        // Logique de basculement Podcast / Musique
         if (data.isPodcast && !isPodcastMode) {
             isPodcastMode = true;
             const vttRes = await fetch(data.vtt);
             const vttText = await vttRes.text();
             cuesIndex = parseVTT(vttText);
-            startSync();
+            startSync(); // On lance la boucle de sous-titres
         } else if (!data.isPodcast && isPodcastMode) {
             isPodcastMode = false;
             stopSync();
         }
-    } catch (e) { dbg("Erreur metadata"); }
+    } catch (e) { 
+        console.error("Erreur JSON:", e); 
+    } finally {
+        isFetching = false;
+    }
 }
 
-function animateProgress() {
-    if (!currentPodcastData || !currentPodcastData.duration_raw) {
-        animationFrameId = requestAnimationFrame(animateProgress);
+function animate() {
+    if (!pendingMetadata || !syncPointServer) {
+        requestAnimationFrame(animate);
         return;
     }
 
-    // 1. Calculer le temps écoulé depuis la dernière mise à jour du JSON
-    const now = Date.now() / 1000;
-    const serverNowEstimate = syncPointServer + (now - syncPointClient);
-    const startedAtUnix = new Date(currentPodcastData.startedAt).getTime() / 1000;
-    
-    // 2. Calculer la position actuelle en secondes
-    const currentPos = Math.max(0, Math.min(currentPodcastData.duration_raw, serverNowEstimate - startedAtUnix));
-    
-    // 3. Calculer le pourcentage
-    const percent = (currentPos / currentPodcastData.duration_raw) * 100;
-    
-    // 4. Mettre à jour la largeur de la barre et le texte du temps
-    progressFill.style.width = percent + "%";
-    
-    // Optionnel : mettre à jour le texte "00:00" en temps réel si vous voulez qu'il défile
-    // formatTime est une petite fonction utilitaire à ajouter
-    time.innerText = formatTime(currentPos);
+    let currentPos = 0;
+    const podcastStart = new Date(pendingMetadata.startedAt).getTime() / 1000;
 
-    animationFrameId = requestAnimationFrame(animateProgress);
+    if (!audio.paused && audio.currentTime > 0) {
+        const now = Date.now() / 1000;
+        const streamElapsed = now - syncPointClient;
+        
+        let bufferDelay = 0;
+        if (audio.buffered.length > 0) {
+            bufferDelay = audio.buffered.end(audio.buffered.length - 1) - audio.currentTime;
+        }
+        
+        const rawPos = (syncPointServer - podcastStart) + streamElapsed - bufferDelay + userOffsetCorrection;
+
+        // La sécurité anti-retour ne s'applique que si on est dans le MÊME morceau
+        currentPos = Math.max(rawPos, maxReachedProgress);
+        maxReachedProgress = currentPos;
+    } else {
+        currentPos = syncPointServer - podcastStart;
+    }
+
+    const durationRaw = pendingMetadata.duration_raw || 1;
+    const percent = (Math.min(currentPos, durationRaw) / durationRaw) * 100;
+    
+    progressFill.style.width = percent + "%";
+    time.innerText = formatTime(currentPos);
+    duration.innerText = pendingMetadata.duration || "--:--";
+
+    requestAnimationFrame(animate);
+}
+
+function updateUI(data) {
+    console.log("Mise à jour UI : " + data.title);
+    title.innerText = data.title || "Titre inconnu";
+    artist.innerText = data.artist || "Artiste inconnu";
+    album.innerText = data.album || "Album inconnu";
+    document.getElementById('metadata').textContent = data.isPodcast ? '🎙️ Podcast' : 'Musique';
+    
+    // CRUCIAL : On réinitialise les compteurs pour le nouveau morceau
+    lastTrackTitle = data.title;
+    maxReachedProgress = 0; 
+    maxReachedTime = 0;
+    subDiv.textContent = ""; 
 }
 
 // Utilitaire pour formater les secondes en MM:SS
@@ -443,9 +498,10 @@ function formatTime(seconds) {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
-animateProgress();
-setInterval(updateMetadata, 1000);
-updateMetadata();
+// --- Lancement des cycles ---
+setInterval(fetchMetadata, 1000); // Check serveur toutes les 5s
+fetchMetadata();                  // Premier appel immédiat
+animate();                        // Lance la boucle de rendu
 
 // Sélection de l'élément
 const volumeSlider = document.getElementById('volume-slider');
