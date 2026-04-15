@@ -338,7 +338,7 @@ main() {
     done
 
     start_ffmpeg_streamer
-    sleep 2 # Slightly longer wait for pipe initialization
+    sleep 4 # Slightly longer wait for pipe initialization
 
     start_podcast_generation
     wait_for_generation_with_music
