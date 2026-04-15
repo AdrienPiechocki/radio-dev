@@ -5,8 +5,6 @@
 
 set -euo pipefail
 
-GEN_PID=""
-
 PLAYLIST_POS=0
 
 STATUS_JSON="./podcast-generator/podcast-status.json"
@@ -21,6 +19,7 @@ ICECAST_PORT="${ICECAST_PORT:-8000}"
 ICECAST_SOURCE_PASSWORD="${ICECAST_SOURCE_PASSWORD:-hackme}"
 ICECAST_MOUNT="${ICECAST_MOUNT:-/radio}"
 
+GEN_PID=""
 MUSIC_PID=""
 TIMER_PID=""
 FFMPEG_PID=""
