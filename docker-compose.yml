@@ -1,0 +1,62 @@
+services:
+  icecast:
+    image: moul/icecast
+    container_name: radio-icecast
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ICECAST_SOURCE_PASSWORD=hackme
+      - ICECAST_ADMIN_PASSWORD=admin
+      - ICECAST_PASSWORD=hackme
+      - ICECAST_RELAY_PASSWORD=hackme
+      - ICECAST_HOSTNAME=localhost
+    networks:
+      - radio-net
+    # No healthcheck here — the image doesn't support it well
+
+  radio:
+    build: .
+    container_name: radio-locale
+    restart: unless-stopped
+    depends_on:
+      - ollama
+      - icecast
+    environment:
+      - OLLAMA_HOST=http://radio-ollama:11434
+      - ICECAST_HOST=icecast
+      - ICECAST_PORT=8000
+      - ICECAST_SOURCE_PASSWORD=hackme
+      - ICECAST_MOUNT=/radio
+    volumes:
+      - ./:/radio/
+    networks:
+      - radio-net
+
+  web:
+    image: nginx:alpine
+    container_name: radio-web
+    ports:
+      - "8080:80"
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+      - ./podcast-generator:/data/podcasts:ro # Changed target path
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro # Add a custom config
+    networks:
+      - radio-net
+
+  ollama:
+    image: ollama/ollama
+    container_name: radio-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - radio-net
+
+networks:
+  radio-net:
+    driver: bridge
+
+volumes:
+  ollama_data:

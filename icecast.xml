@@ -1,0 +1,72 @@
+<icecast>
+  <!-- =========================================================
+       icecast.xml — Configuration Icecast2 pour la radio locale
+       ========================================================= -->
+
+  <location>localhost</location>
+  <admin>admin@localhost</admin>
+
+  <limits>
+    <clients>10</clients>
+    <sources>1</sources>
+    <queue-size>524288</queue-size>
+    <client-timeout>30</client-timeout>
+    <header-timeout>15</header-timeout>
+    <source-timeout>10</source-timeout>
+    <burst-on-connect>1</burst-on-connect>
+    <burst-size>65535</burst-size>
+  </limits>
+
+  <authentication>
+    <!-- Mot de passe pour les sources (ffmpeg dans radio.sh) -->
+    <source-password>hackme</source-password>
+    <!-- Mot de passe pour le relay -->
+    <relay-password>hackme</relay-password>
+    <!-- Mot de passe admin (interface web) -->
+    <admin-user>admin</admin-user>
+    <admin-password>admin</admin-password>
+  </authentication>
+
+  <hostname>localhost</hostname>
+
+  <listen-socket>
+    <port>8000</port>
+    <bind-address>0.0.0.0</bind-address>
+  </listen-socket>
+
+  <http-headers>
+    <header name="Access-Control-Allow-Origin" value="*" />
+  </http-headers>
+
+  <!-- Point de montage principal : http://localhost:8000/radio -->
+  <mount type="normal">
+    <mount-name>/radio</mount-name>
+    <stream-name>Radio Locale</stream-name>
+    <stream-description>Ma radio IA avec podcasts horaires</stream-description>
+    <stream-url>http://localhost:8000/radio</stream-url>
+    <genre>Various</genre>
+    <public>0</public>
+  </mount>
+
+  <fileserve>1</fileserve>
+
+  <paths>
+    <basedir>/usr/share/icecast2</basedir>
+    <logdir>/var/log/icecast2</logdir>
+    <webroot>/usr/share/icecast2/web</webroot>
+    <adminroot>/usr/share/icecast2/admin</adminroot>
+    <pidfile>/run/icecast2/icecast2.pid</pidfile>
+  </paths>
+
+  <logging>
+    <accesslog>access.log</accesslog>
+    <errorlog>error.log</errorlog>
+    <loglevel>3</loglevel>
+    <logsize>10000</logsize>
+  </logging>
+
+  <security>
+    <chroot>0</chroot>
+  </security>
+
+</icecast>

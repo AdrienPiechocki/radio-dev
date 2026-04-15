@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Radio Locale IA</title>
+    <style>
+        /* Variables de design pour une maintenance facile */
+        :root {
+            --bg-dark: #0f0f12;
+            --card-bg: #1a1a20;
+            --accent: #bb86fc;
+            --secondary: #03dac6;
+            --text-main: #ffffff;
+            --text-dim: #a0a0a0;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg-dark);
+            background-image: radial-gradient(circle at 20% 30%, #251a3a 0%, var(--bg-dark) 70%);
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .player-card {
+            background: var(--card-bg);
+            padding: 40px;
+            border-radius: 24px;
+            width: 100%;
+            max-width: 420px;
+            text-align: center;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        /* --- Header & Badge --- */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        h1 { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 2px; color: var(--text-dim); }
+
+        #metadata {
+            font-size: 0.75rem;
+            background: rgba(187, 134, 252, 0.15);
+            color: var(--accent);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+        }
+
+        /* --- Album Art & Track Info --- */
+        .album-art {
+            width: 240px;
+            height: 240px;
+            background: linear-gradient(45deg, #2a2a2a, #3a3a3a);
+            margin: 0 auto 25px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+            font-size: 4rem;
+        }
+
+        .track-info { margin-bottom: 25px; }
+        #track-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 6px; display: block; }
+        #track-artist { font-size: 1rem; color: var(--accent); display: block; }
+        #track-album { font-size: 0.85rem; color: var(--text-dim); margin-top: 4px; display: block; }
+
+        /* --- Progress Bar --- */
+        .progress-container {
+            width: 100%;
+            margin-bottom: 30px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #333;
+            border-radius: 3px;
+            overflow: hidden;
+            position: relative;
+        }
+        .progress-fill {
+            width: 0%; /* Départ à zéro */
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent), var(--secondary));
+            border-radius: 3px;
+            /* Ne pas mettre de transition CSS ici pour éviter les conflits avec le JS */
+        }
+        .time-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-top: 8px;
+        }
+
+        /* --- Controls --- */
+        .controls { display: flex; flex-direction: column; gap: 20px; align-items: center; }
+
+        #play-btn {
+            background: var(--accent);
+            color: #121212;
+            border: none;
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            font-size: 0; /* On cache le texte pour une icône plus tard ou un style rond */
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 20px rgba(187, 134, 252, 0.4);
+        }
+        
+        /* Simuler une icône Play/Pause avec CSS pur */
+        #play-btn::before {
+            content: '';
+            display: block;
+            width: 0; height: 0;
+            border-style: solid;
+            border-width: 10px 0 10px 18px;
+            border-color: transparent transparent transparent #121212;
+            margin-left: 5px;
+        }
+
+        #play-btn.playing::before {
+            width: 6px; height: 6px;
+            background: black;
+            margin: 0;
+        }
+
+        #play-btn:hover { transform: scale(1.05); filter: brightness(1.1); }
+        #play-btn:active { transform: scale(0.95); }
+
+        #subtitles {
+            min-height: 3em;
+            margin-top: 30px;
+            font-size: 1rem;
+            line-height: 1.5;
+            color: var(--secondary);
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            border-top: 1px solid rgba(255,255,255,0.05);
+            padding-top: 20px;
+        }
+
+        #debug {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            font-size: 10px;
+            color: #444;
+        }
+    </style>
+</head>
+<body>
+
+<div class="player-card">
+    <div class="header">
+        <h1>Direct</h1>
+        <div id="metadata">Connexion...</div>
+    </div>
+
+    <div class="album-art" id="cover-art">📻</div>
+
+    <div class="track-info">
+        <span id="track-title">Titre de l'émission</span>
+        <span id="track-artist">Nom de l'artiste</span>
+        <span id="track-album">Album ou Sous-titre</span>
+    </div>
+
+    <div class="progress-container">
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <div class="time-info">
+            <span id="current-time">LIVE</span>
+            <span id="duration">--:--</span>
+        </div>
+    </div>
+
+    <div class="controls">
+        <audio id="radio-audio" crossorigin="anonymous">
+            <source src="/icecast/radio" type="audio/mpeg">
+        </audio>
+
+        <button id="play-btn" onclick="togglePlay()"></button>
+    </div>
+
+    <div id="subtitles"></div>
+    <div id="debug"></div>
+</div>
+<script>
+const audio    = document.getElementById('radio-audio');
+const subDiv   = document.getElementById('subtitles');
+const debugDiv = document.getElementById('debug');
+const playBtn  = document.getElementById('play-btn');
+const album    = document.getElementById('track-album');
+const artist   = document.getElementById('track-artist');
+const title    = document.getElementById('track-title');
+const time     = document.getElementById('current-time');
+const duration = document.getElementById('duration');
+const progressFill = document.getElementById('progress-fill');
+
+let animationFrameId = null;
+let currentPodcastData   = null;
+let cuesIndex            = [];
+let syncTimer            = null;
+let isPodcastMode        = false;
+let syncPointServer      = 0;
+let syncPointClient      = 0;
+let podcastStartedAt     = 0;
+let userOffsetCorrection = 0;
+let lastText             = "";
+let maxReachedTime       = 0;
+
+function dbg(msg) {
+    debugDiv.textContent = msg;
+}
+
+function adjustOffset(val) {
+    userOffsetCorrection = Math.round((userOffsetCorrection + val) * 10) / 10;
+    document.getElementById('offset-display').textContent = `Synchro: ${userOffsetCorrection > 0 ? '+' : ''}${userOffsetCorrection.toFixed(1)}s`;
+}
+
+function parseVTT(vttText) {
+    const cues = [];
+    const lines = vttText.split('\n');
+    let i = 0;
+    while (i < lines.length) {
+        if (lines[i].includes('-->')) {
+            const [start, end] = lines[i].split('-->').map(t => {
+                const p = t.trim().split(':').map(Number);
+                return p.length === 3 ? p[0]*3600 + p[1]*60 + p[2] : p[0]*60 + p[1];
+            });
+            i++;
+            let text = "";
+            while (i < lines.length && lines[i].trim() !== "") {
+                text += lines[i] + " ";
+                i++;
+            }
+            cues.push({ start, end, text: text.trim() });
+        }
+        i++;
+    }
+    return cues;
+}
+let isTransitioning = false; 
+let pendingText = ""; // Verrou de contenu pour empêcher les retours en arrière
+
+function startSync() {
+    if (syncTimer) clearInterval(syncTimer);
+
+    podcastStartedAt = new Date(currentPodcastData.startedAt).getTime() / 1000;
+    syncPointClient  = Date.now() / 1000;
+    syncPointServer  = currentPodcastData.serverNow;
+    maxReachedTime   = 0; // Reset au démarrage
+
+    syncTimer = setInterval(() => {
+        if (!currentPodcastData || !cuesIndex.length) return;
+
+        const now = Date.now() / 1000;
+        const serverNowEstimate = syncPointServer + (now - syncPointClient);
+        
+        let bufferDelay = 0;
+        if (audio.buffered.length > 0) {
+            bufferDelay = audio.buffered.end(audio.buffered.length - 1) - audio.currentTime;
+        }
+
+        const rel = serverNowEstimate - podcastStartedAt - bufferDelay + userOffsetCorrection;
+
+        // --- SÉCURITÉ ANTI-FLASHBACK ---
+        // On ne permet pas à la timeline de "reculer". 
+        // Si 'rel' est inférieur au temps max déjà atteint, on utilise le temps max.
+        const stableRel = Math.max(rel, maxReachedTime);
+        maxReachedTime = stableRel; 
+        // -------------------------------
+
+        const currentCue = cuesIndex.find(cue => stableRel >= cue.start && stableRel <= cue.end);
+        const foundText = currentCue ? currentCue.text : "";
+
+        if (foundText !== lastText) {
+            updateSubtitles(foundText);
+        }
+
+        dbg(`Pos: ${stableRel.toFixed(2)}s | Buffer: ${bufferDelay.toFixed(1)}s`);
+    }, 100);
+}
+
+function updateSubtitles(newText) {
+    // Changement instantané du contenu
+    subDiv.textContent = newText;
+    lastText = newText;
+
+    // Gestion de la visibilité sans animation
+    if (newText === "") {
+        subDiv.style.opacity = "0";
+    } else {
+        subDiv.style.opacity = "1";
+    }
+}
+
+function stopSync() {
+    clearInterval(syncTimer);
+    syncTimer = null;
+    subDiv.textContent = '';
+    lastText = "";
+}
+
+function togglePlay() {
+    if (audio.paused) {
+        audio.src = '/icecast/radio?v=' + Date.now();
+        audio.play().then(() => {
+            playBtn.classList.add('playing');
+            playBtn.textContent = 'Pause';
+            subDiv.style.display = 'block';
+            if (isPodcastMode && currentPodcastData) {
+                startSync();
+            }
+        });
+    } else {
+        audio.pause();
+        playBtn.classList.remove('playing');
+        playBtn.textContent = 'Lecture';
+        subDiv.style.display = 'none';
+        stopSync();
+    }
+}
+
+async function updateMetadata() {
+    try {
+        const res = await fetch('/podcasts/podcast-status.json?t=' + Date.now());
+        const data = await res.json();
+        currentPodcastData = data;
+
+        document.getElementById('metadata').textContent = data.isPodcast ? '🎙️ Podcast en cours' : 'Musique';
+        title.innerText = data.title || "Titre inconnu";
+        artist.innerText = data.artist || "Artiste inconnu";
+        album.innerText = data.album || "Album inconnu";
+        time.innerText = data.time || "--:--";
+        duration.innerText = data.duration || "--:--";
+
+        if (data.isPodcast && !isPodcastMode) {
+            isPodcastMode = true;
+            const vttRes = await fetch(data.vtt);
+            const vttText = await vttRes.text();
+            cuesIndex = parseVTT(vttText);
+            startSync();
+        } else if (!data.isPodcast && isPodcastMode) {
+            isPodcastMode = false;
+            stopSync();
+        }
+    } catch (e) { dbg("Erreur metadata"); }
+}
+
+function animateProgress() {
+    if (!currentPodcastData || !currentPodcastData.duration_raw) {
+        animationFrameId = requestAnimationFrame(animateProgress);
+        return;
+    }
+
+    // 1. Calculer le temps écoulé depuis la dernière mise à jour du JSON
+    const now = Date.now() / 1000;
+    const serverNowEstimate = syncPointServer + (now - syncPointClient);
+    const startedAtUnix = new Date(currentPodcastData.startedAt).getTime() / 1000;
+    
+    // 2. Calculer la position actuelle en secondes
+    const currentPos = Math.max(0, Math.min(currentPodcastData.duration_raw, serverNowEstimate - startedAtUnix));
+    
+    // 3. Calculer le pourcentage
+    const percent = (currentPos / currentPodcastData.duration_raw) * 100;
+    
+    // 4. Mettre à jour la largeur de la barre et le texte du temps
+    progressFill.style.width = percent + "%";
+    
+    // Optionnel : mettre à jour le texte "00:00" en temps réel si vous voulez qu'il défile
+    // formatTime est une petite fonction utilitaire à ajouter
+    time.innerText = formatTime(currentPos);
+
+    animationFrameId = requestAnimationFrame(animateProgress);
+}
+
+// Utilitaire pour formater les secondes en MM:SS
+function formatTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+animateProgress();
+setInterval(updateMetadata, 1000);
+updateMetadata();
+</script>
+</body>
+</html>
