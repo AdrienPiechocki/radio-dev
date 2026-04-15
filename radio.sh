@@ -211,12 +211,16 @@ play_file() {
     kill "$UPDATE_PID" 2>/dev/null || true
 }
 
-seconds_to_next_hour() {
+seconds_to_next_half_hour() {
     local now_min now_sec
-    # FIXED: Added '-' to strip leading zeros to avoid "value too great for base" errors
     now_min=$(date +%-M)
     now_sec=$(date +%-S)
-    echo $(( (60 - now_min) * 60 - now_sec ))
+    
+    if [ "$now_min" -lt 30 ]; then
+        echo $(( (30 - now_min) * 60 - now_sec ))
+    else
+        echo $(( (60 - now_min) * 60 - now_sec ))
+    fi
 }
 
 run_podcast() {
@@ -235,30 +239,64 @@ run_podcast() {
         # On passe "true" pour isPodcast, puis les métadonnées spécifiques
         (
             while true; do
-                write_status true "$start_iso" "Chronique IA" "Radio Locale" "" "$duration"
+                write_status true "$start_iso" "Chronique IA" "Radio DEV" "" "$duration"
                 sleep 1
             done
         ) &
         STATUS_PID=$!
 
         # 3. Lecture effective
-        play_file "$PODCAST_WAV"
-        
+        ffmpeg -hide_banner -nostdin -i "$PODCAST_WAV" -f s16le -ar 44100 -ac 2 -loglevel quiet - >> "$FIFO"
+
         log "🎙️  Podcast terminé"
         kill "$STATUS_PID" 2>/dev/null || true
 
         # Reset du statut vers le mode musique
-        write_status false ""
+        write_status false "" "" "" "" "0"
     else
         log "WARN : $PODCAST_WAV introuvable, diffusion ignorée"
     fi
 
     # --- Suite du script (Génération du prochain podcast) ---
+    start_podcast_generation
+    wait_for_generation_with_music
+    log "✅  Prêt pour le prochain podcast"
+}
+
+should_generate_podcast() {
+    local wait_sec
+    wait_sec=$(seconds_to_next_half_hour)
+
+    if (( wait_sec > 600 )); then
+        return 0
+    else
+        return 1
+    fi
+}
+
+generate_podcast() {
     log "⚙️  Génération du prochain podcast en arrière-plan..."
+
     bash "$PODCAST_GEN" --lang fr && \
         log "⚙️  Génération terminée" \
-        || log "WARN : run.sh a retourné une erreur" &
-    GEN_PID=$!
+        || log "WARN : run.sh a retourné une erreur"
+}
+
+start_podcast_generation() {
+    if should_generate_podcast; then
+        log "🧠 Génération autorisée (créneau OK)"
+        generate_podcast &
+        GEN_PID=$!
+    else
+        log "⏱️ Trop proche du créneau → génération skip"
+        GEN_PID=""
+    fi
+}
+
+wait_for_generation_with_music() {
+    if [[ -z "${GEN_PID:-}" ]]; then
+        return 0
+    fi
 
     log "🎵  Musique pendant la génération..."
     while kill -0 "$GEN_PID" 2>/dev/null; do
@@ -267,7 +305,6 @@ run_podcast() {
 
     wait "$GEN_PID" || true
     GEN_PID=""
-    log "✅  Prêt pour le prochain podcast"
 }
 
 main() {
@@ -304,9 +341,13 @@ main() {
     start_ffmpeg_streamer
     sleep 2 # Slightly longer wait for pipe initialization
 
+    start_podcast_generation
+    wait_for_generation_with_music
+    log "✅  Prêt pour le prochain podcast"
+
     while true; do
         local wait_sec
-        wait_sec=$(seconds_to_next_hour)
+        wait_sec=$(seconds_to_next_half_hour)
         log "⏰  Prochain podcast dans ${wait_sec}s"
 
         rm -f /tmp/podcast_trigger
@@ -317,7 +358,7 @@ main() {
             play_next_track
 
             if [[ -f /tmp/podcast_trigger ]]; then
-                log "⏰  Heure pile — fin du morceau respectée"
+                log "⏰  C'est l'heure de la chronique !"
                 rm -f /tmp/podcast_trigger
                 break
             fi

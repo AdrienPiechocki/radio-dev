@@ -277,246 +277,189 @@ const time     = document.getElementById('current-time');
 const duration = document.getElementById('duration');
 const progressFill = document.getElementById('progress-fill');
 
-let animationFrameId = null;
-let currentPodcastData   = null;
-let cuesIndex            = [];
-let syncTimer            = null;
-let isPodcastMode        = false;
-let syncPointServer      = 0;
-let syncPointClient      = 0;
-let podcastStartedAt     = 0;
-let userOffsetCorrection = 0;
-let lastText             = "";
-let maxReachedTime       = 0;
-let pendingMetadata = null; // Stocke le prochain morceau avant l'affichage
-let lastTrackTitle = "";
-let maxReachedProgress = 0; 
-let isFetching = false;
+let displayedPodcastData = null;
+let currentPodcastData = null;
+let cuesIndex          = [];
+let isPodcastMode      = false;
+let lastTrackTitle     = "";
+let isFetching         = false;
+let lastPodcastUrl     = ""; 
 
-function dbg(msg) {
-    debugDiv.textContent = msg;
+// VARIABLES DE SYNCHRO
+let serverStartTime    = 0; 
+let playClickTime      = 0; 
+let offsetAtPlay       = 0; 
+let userOffsetCorrection = -4.096;
+
+function adjSync(val) {
+    userOffsetCorrection += val;
 }
 
-function adjustOffset(val) {
-    userOffsetCorrection = Math.round((userOffsetCorrection + val) * 10) / 10;
-    document.getElementById('offset-display').textContent = `Synchro: ${userOffsetCorrection > 0 ? '+' : ''}${userOffsetCorrection.toFixed(1)}s`;
+function parseVttTime(t) {
+    const p = t.trim().replace(',', '.').split(':').map(Number);
+    if (p.length === 3) return p[0] * 3600 + p[1] * 60 + p[2];
+    return p[0] * 60 + p[1];
 }
 
 function parseVTT(vttText) {
     const cues = [];
-    const lines = vttText.split('\n');
-    let i = 0;
-    while (i < lines.length) {
-        if (lines[i].includes('-->')) {
-            const [start, end] = lines[i].split('-->').map(t => {
-                const p = t.trim().split(':').map(Number);
-                return p.length === 3 ? p[0]*3600 + p[1]*60 + p[2] : p[0]*60 + p[1];
-            });
-            i++;
-            let text = "";
-            while (i < lines.length && lines[i].trim() !== "") {
-                text += lines[i] + " ";
-                i++;
-            }
-            cues.push({ start, end, text: text.trim() });
+    const blocks = vttText.split(/\n\s*\n/);
+    blocks.forEach(block => {
+        const lines = block.split('\n').map(l => l.trim());
+        const timeLine = lines.find(l => l.includes('-->'));
+        if (timeLine) {
+            const [startStr, endStr] = timeLine.split('-->');
+            const start = parseVttTime(startStr);
+            const end = parseVttTime(endStr);
+            const textIdx = lines.indexOf(timeLine) + 1;
+            const text = lines.slice(textIdx).join(' ').trim();
+            if (text) cues.push({ start, end, text });
         }
-        i++;
-    }
+    });
     return cues;
-}
-let isTransitioning = false; 
-let pendingText = ""; // Verrou de contenu pour empêcher les retours en arrière
-
-function startSync() {
-    if (syncTimer) clearInterval(syncTimer);
-
-    // On utilise systématiquement les données les plus fraîches du serveur
-    syncTimer = setInterval(() => {
-        // Sécurité : on attend d'avoir des données et des sous-titres chargés
-        if (!pendingMetadata || !cuesIndex.length) return;
-
-        const now = Date.now() / 1000;
-        const podcastStart = new Date(pendingMetadata.startedAt).getTime() / 1000;
-        const serverNowEstimate = syncPointServer + (now - syncPointClient);
-        
-        let bufferDelay = 0;
-        if (audio.buffered.length > 0) {
-            bufferDelay = audio.buffered.end(audio.buffered.length - 1) - audio.currentTime;
-        }
-
-        // Calcul de la position relative (même logique que dans animate)
-        const rel = serverNowEstimate - podcastStart - bufferDelay + userOffsetCorrection;
-
-        // Sécurité anti-retour
-        const stableRel = Math.max(rel, maxReachedTime);
-        maxReachedTime = stableRel; 
-
-        // Recherche du sous-titre correspondant au temps actuel
-        const currentCue = cuesIndex.find(cue => stableRel >= cue.start && stableRel <= cue.end);
-        const foundText = currentCue ? currentCue.text : "";
-
-        if (foundText !== lastText) {
-            updateSubtitles(foundText);
-        }
-
-        dbg(`Synchro Podcast: ${stableRel.toFixed(1)}s`);
-    }, 100);
-}
-
-function updateSubtitles(newText) {
-    // Changement instantané du contenu
-    subDiv.textContent = newText;
-    lastText = newText;
-
-    // Gestion de la visibilité sans animation
-    if (newText === "") {
-        subDiv.style.opacity = "0";
-    } else {
-        subDiv.style.opacity = "1";
-    }
-}
-
-function stopSync() {
-    clearInterval(syncTimer);
-    syncTimer = null;
-    subDiv.textContent = '';
-    lastText = "";
 }
 
 function togglePlay() {
     if (audio.paused) {
+        if (currentPodcastData) {
+            playClickTime = Date.now() / 1000;
+            const start = new Date(currentPodcastData.startedAt).getTime() / 1000;
+            const secondsSinceFetch = playClickTime - currentPodcastData.fetchedAt;
+            offsetAtPlay = (currentPodcastData.serverNow + secondsSinceFetch) - start;
+        }
         audio.src = '/icecast/radio?v=' + Date.now();
         audio.play().then(() => {
             playBtn.classList.add('playing');
-            playBtn.textContent = 'Pause';
-            subDiv.style.display = 'block';
-            if (isPodcastMode && currentPodcastData) {
-                startSync();
-            }
+            subDiv.style.opacity = "1";
         });
     } else {
         audio.pause();
         playBtn.classList.remove('playing');
-        playBtn.textContent = 'Lecture';
-        subDiv.style.display = 'none';
-        stopSync();
+        subDiv.innerHTML = "";        // ← vider immédiatement
+        subDiv.style.opacity = "0";
     }
 }
 
 async function fetchMetadata() {
     if (isFetching) return;
     isFetching = true;
-    
     try {
         const res = await fetch('/podcasts/podcast-status.json?t=' + Date.now());
         const data = await res.json();
-        
-        // Mise à jour des références temporelles et de l'objet global
-        pendingMetadata = data;
-        currentPodcastData = data; // On synchronise ici aussi pour startSync
-        syncPointServer = data.serverNow;
-        syncPointClient = Date.now() / 1000;
+        data.fetchedAt = Date.now() / 1000;  // ← heure locale au moment du fetch
+        currentPodcastData = data;
 
-        // Mise à jour immédiate de l'interface si le titre change
         if (data.title !== lastTrackTitle) {
-            updateUI(data);
+            lastTrackTitle = data.title;
+            setTimeout(() => {
+                displayedPodcastData = data;
+                updateUI(data);
+            }, Math.abs(userOffsetCorrection) * 1000);
         }
 
-        // Logique de basculement Podcast / Musique
-        if (data.isPodcast && !isPodcastMode) {
+        if (data.isPodcast && data.vtt !== lastPodcastUrl) {
             isPodcastMode = true;
+            lastPodcastUrl = data.vtt;
             const vttRes = await fetch(data.vtt);
             const vttText = await vttRes.text();
             cuesIndex = parseVTT(vttText);
-            startSync(); // On lance la boucle de sous-titres
-        } else if (!data.isPodcast && isPodcastMode) {
+
+            if (!audio.paused) {
+                playClickTime = Date.now() / 1000;
+                const start = new Date(data.startedAt).getTime() / 1000;
+                offsetAtPlay = data.serverNow - start;
+            }
+        } else if (!data.isPodcast) {
             isPodcastMode = false;
-            stopSync();
+            lastPodcastUrl = "";
+            cuesIndex = [];
+            setTimeout(() => subDiv.innerHTML = "", Math.abs(userOffsetCorrection) * 1000);
         }
-    } catch (e) { 
-        console.error("Erreur JSON:", e); 
-    } finally {
-        isFetching = false;
-    }
+    } catch (e) { console.error("Metadata Error:", e); }
+    finally { isFetching = false; }
 }
 
 function animate() {
-    if (!pendingMetadata || !syncPointServer) {
-        requestAnimationFrame(animate);
-        return;
-    }
-
-    let currentPos = 0;
-    const podcastStart = new Date(pendingMetadata.startedAt).getTime() / 1000;
-
-    if (!audio.paused && audio.currentTime > 0) {
+    if (currentPodcastData) {
         const now = Date.now() / 1000;
-        const streamElapsed = now - syncPointClient;
+        let currentPos = 0;
         
-        let bufferDelay = 0;
-        if (audio.buffered.length > 0) {
-            bufferDelay = audio.buffered.end(audio.buffered.length - 1) - audio.currentTime;
+
+        if (!audio.paused) {
+            currentPos = offsetAtPlay + (now - playClickTime) + userOffsetCorrection;
+        } else {
+            const start = new Date(currentPodcastData.startedAt).getTime() / 1000;
+            const secondsSinceFetch = (Date.now() / 1000) - currentPodcastData.fetchedAt;
+            currentPos = (currentPodcastData.serverNow + secondsSinceFetch) - start + userOffsetCorrection;
         }
-        
-        const rawPos = (syncPointServer - podcastStart) + streamElapsed - bufferDelay + userOffsetCorrection;
 
-        // La sécurité anti-retour ne s'applique que si on est dans le MÊME morceau
-        currentPos = Math.max(rawPos, maxReachedProgress);
-        maxReachedProgress = currentPos;
-    } else {
-        currentPos = syncPointServer - podcastStart;
+        const durationRaw = displayedPodcastData.duration_raw || 1;
+        currentPos = Math.max(0, Math.min(currentPos, durationRaw));
+        if (currentPos >= durationRaw - 0.2) {
+            // On ne pousse pas la barre à 100% — on attend la prochaine metadata
+            currentPos = durationRaw - 0.2;
+        }
+
+        // Mise à jour de la barre et du texte temps
+        progressFill.style.width = (currentPos / durationRaw) * 100 + "%";
+        time.innerText = formatTime(currentPos);
+        duration.innerText = displayedPodcastData.duration || "--:--";
+
+
+        // GESTION DES SOUS-TITRES (Utilisation de currentPos corrigé)
+        if (isPodcastMode && cuesIndex.length > 0 && !audio.paused) {
+            const currentCue = cuesIndex.find(cue => currentPos >= cue.start && currentPos <= cue.end);
+            const newText = currentCue ? currentCue.text : "";
+            
+            // On vérifie innerHTML pour forcer le rafraîchissement si le texte change
+            if (subDiv.innerHTML !== newText) {
+                subDiv.innerHTML = newText;
+                subDiv.style.opacity = (newText === "") ? "0" : "1";
+            }
+        }
     }
-
-    const durationRaw = pendingMetadata.duration_raw || 1;
-    const percent = (Math.min(currentPos, durationRaw) / durationRaw) * 100;
-    
-    progressFill.style.width = percent + "%";
-    time.innerText = formatTime(currentPos);
-    duration.innerText = pendingMetadata.duration || "--:--";
-
     requestAnimationFrame(animate);
 }
 
 function updateUI(data) {
-    console.log("Mise à jour UI : " + data.title);
-    title.innerText = data.title || "Titre inconnu";
+    title.innerText  = data.title  || "Titre inconnu";
     artist.innerText = data.artist || "Artiste inconnu";
-    album.innerText = data.album || "Album inconnu";
-    document.getElementById('metadata').textContent = data.isPodcast ? '🎙️ Podcast' : 'Musique';
-    
-    // CRUCIAL : On réinitialise les compteurs pour le nouveau morceau
+    album.innerText  = data.album  || "Album inconnu";
+    document.getElementById('metadata').textContent = data.isPodcast ? 'Podcast' : 'Musique';
     lastTrackTitle = data.title;
-    maxReachedProgress = 0; 
-    maxReachedTime = 0;
-    subDiv.textContent = ""; 
+
+    // ✅ NOUVEAU : réinitialiser la synchro à chaque changement de track
+    if (!audio.paused) {
+        playClickTime = Date.now() / 1000;
+        const start = new Date(data.startedAt).getTime() / 1000;
+        offsetAtPlay  = data.serverNow - start;
+    }
+
+    // ✅ NOUVEAU : réinitialiser visuellement la barre immédiatement
+    progressFill.style.width = "0%";
 }
 
-// Utilitaire pour formater les secondes en MM:SS
 function formatTime(seconds) {
     const m = Math.floor(seconds / 60);
     const s = Math.floor(seconds % 60);
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
-// --- Lancement des cycles ---
-setInterval(fetchMetadata, 1000); // Check serveur toutes les 5s
-fetchMetadata();                  // Premier appel immédiat
-animate();                        // Lance la boucle de rendu
-
-// Sélection de l'élément
 const volumeSlider = document.getElementById('volume-slider');
+volumeSlider.addEventListener('input', (e) => audio.volume = e.target.value);
 
-// Ecouteur d'événement pour le changement de volume
-volumeSlider.addEventListener('input', (e) => {
-    const volumeValue = e.target.value;
-    audio.volume = volumeValue;
-    
-    // Optionnel : Changer l'opacité des icônes selon le volume
-    dbg(`Volume: ${Math.round(volumeValue * 100)}%`);
-});
+async function start() {
+    fetchMetadata();
+    animate();
+    const res = await fetch('/podcasts/podcast-status.json?t=' + Date.now());
+    const data = await res.json();
+    data.fetchedAt = Date.now() / 1000;  // ← heure locale au moment du fetch
+    updateUI(data);
+    displayedPodcastData = data;
+}
 
-// Initialisation au chargement (pour correspondre au slider)
-audio.volume = volumeSlider.value;
+setInterval(fetchMetadata, 1000);
+start();
 </script>
 </body>
 </html>
