@@ -290,6 +290,8 @@ let serverStartTime    = 0;
 let playClickTime      = 0; 
 let offsetAtPlay       = 0; 
 let userOffsetCorrection = -4.096;
+let baseServerNow = 0;
+let baseLocalTime = 0;
 
 function adjSync(val) {
     userOffsetCorrection += val;
@@ -346,17 +348,24 @@ async function fetchMetadata() {
     try {
         const res = await fetch('/podcasts/podcast-status.json?t=' + Date.now());
         const data = await res.json();
-        data.fetchedAt = Date.now() / 1000;  // ← heure locale au moment du fetch
+        
+        // On stocke la mise à jour serveur
         currentPodcastData = data;
+        baseServerNow = data.serverNow;
+        baseLocalTime = Date.now() / 1000;
 
+        // Si le titre a changé sur le serveur, on attend 4s avant de basculer l'affichage
         if (data.title !== lastTrackTitle) {
             lastTrackTitle = data.title;
+            const delay = Math.abs(userOffsetCorrection) * 1000;
+            
             setTimeout(() => {
-                displayedPodcastData = data;
+                // C'est seulement ici qu'on change la référence de l'UI
+                displayedPodcastData = data; 
                 updateUI(data);
-            }, Math.abs(userOffsetCorrection) * 1000);
+            }, delay);
         }
-
+        
         if (data.isPodcast && data.vtt !== lastPodcastUrl) {
             isPodcastMode = true;
             lastPodcastUrl = data.vtt;
@@ -380,38 +389,33 @@ async function fetchMetadata() {
 }
 
 function animate() {
-    if (currentPodcastData) {
+    // On utilise displayedPodcastData en priorité pour l'affichage
+    const activeData = displayedPodcastData || currentPodcastData;
+
+    if (activeData) {
         const now = Date.now() / 1000;
-        let currentPos = 0;
+        const elapsed = now - baseLocalTime;
         
+        // On calcule la position basée sur l'heure de début de la musique AFFICHÉE
+        const start = new Date(activeData.startedAt).getTime() / 1000;
+        
+        // On utilise le serverNow du moment du fetch
+        let currentPos = (baseServerNow + elapsed) - start + userOffsetCorrection;
 
-        if (!audio.paused) {
-            currentPos = offsetAtPlay + (now - playClickTime) + userOffsetCorrection;
-        } else {
-            const start = new Date(currentPodcastData.startedAt).getTime() / 1000;
-            const secondsSinceFetch = (Date.now() / 1000) - currentPodcastData.fetchedAt;
-            currentPos = (currentPodcastData.serverNow + secondsSinceFetch) - start + userOffsetCorrection;
-        }
+        const durationRaw = activeData.duration_raw || 1;
 
-        const durationRaw = displayedPodcastData.duration_raw || 1;
+        // Clamp pour éviter les valeurs bizarres en fin de morceau
         currentPos = Math.max(0, Math.min(currentPos, durationRaw));
-        if (currentPos >= durationRaw - 0.2) {
-            // On ne pousse pas la barre à 100% — on attend la prochaine metadata
-            currentPos = durationRaw - 0.2;
-        }
 
-        // Mise à jour de la barre et du texte temps
+        // Mise à jour de l'UI
         progressFill.style.width = (currentPos / durationRaw) * 100 + "%";
         time.innerText = formatTime(currentPos);
-        duration.innerText = displayedPodcastData.duration || "--:--";
+        duration.innerText = activeData.duration || "--:--";
 
-
-        // GESTION DES SOUS-TITRES (Utilisation de currentPos corrigé)
+        // Sous-titres : utilisez aussi activeData
         if (isPodcastMode && cuesIndex.length > 0 && !audio.paused) {
             const currentCue = cuesIndex.find(cue => currentPos >= cue.start && currentPos <= cue.end);
             const newText = currentCue ? currentCue.text : "";
-            
-            // On vérifie innerHTML pour forcer le rafraîchissement si le texte change
             if (subDiv.innerHTML !== newText) {
                 subDiv.innerHTML = newText;
                 subDiv.style.opacity = (newText === "") ? "0" : "1";
@@ -420,7 +424,6 @@ function animate() {
     }
     requestAnimationFrame(animate);
 }
-
 function updateUI(data) {
     title.innerText  = data.title  || "Titre inconnu";
     artist.innerText = data.artist || "Artiste inconnu";
@@ -434,9 +437,6 @@ function updateUI(data) {
         const start = new Date(data.startedAt).getTime() / 1000;
         offsetAtPlay  = data.serverNow - start;
     }
-
-    // ✅ NOUVEAU : réinitialiser visuellement la barre immédiatement
-    progressFill.style.width = "0%";
 }
 
 function formatTime(seconds) {
