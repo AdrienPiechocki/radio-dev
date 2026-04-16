@@ -332,13 +332,11 @@ function togglePlay() {
         audio.src = '/icecast/radio?v=' + Date.now();
         audio.play().then(() => {
             playBtn.classList.add('playing');
-            subDiv.style.opacity = "1";
         });
     } else {
         audio.pause();
         playBtn.classList.remove('playing');
         subDiv.innerHTML = "";        // ← vider immédiatement
-        subDiv.style.opacity = "0";
     }
 }
 
@@ -381,8 +379,6 @@ async function fetchMetadata() {
         } else if (!data.isPodcast) {
             isPodcastMode = false;
             lastPodcastUrl = "";
-            cuesIndex = [];
-            setTimeout(() => subDiv.innerHTML = "", Math.abs(userOffsetCorrection) * 1000);
         }
     } catch (e) { console.error("Metadata Error:", e); }
     finally { isFetching = false; }
@@ -418,12 +414,16 @@ function animate() {
             const newText = currentCue ? currentCue.text : "";
             if (subDiv.innerHTML !== newText) {
                 subDiv.innerHTML = newText;
-                subDiv.style.opacity = (newText === "") ? "0" : "1";
             }
         } else if (!isPodcastMode || !displayedPodcastData?.isPodcast) {
-            if (subDiv.innerHTML !== "") {
-                subDiv.innerHTML = "";
-                subDiv.style.opacity = "0";
+            // On vide cuesIndex seulement quand la position a dépassé la durée
+            const activeData = displayedPodcastData || currentPodcastData;
+            const durationRaw = activeData?.duration_raw || 0;
+            if (currentPos >= durationRaw || audio.paused) {
+                if (subDiv.innerHTML !== "") {
+                    subDiv.innerHTML = "";
+                    cuesIndex = []; // nettoyage final ici
+                }
             }
         }
     }
