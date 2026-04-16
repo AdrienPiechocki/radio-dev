@@ -11,8 +11,10 @@ STATUS_JSON="./status.json"
 
 PODCAST_WAV="./podcast-generator/podcast.wav"
 PODCAST_GEN="./podcast-generator/run.sh"
-PODCAST_VTT="./podcast-generator/podcast.vtt"
+PODCAST_TEXT="./podcast-generator/podcast_text.txt"
 PLAYLIST="./playlist.m3u"
+ANNOUNCE_WAV="./radio-generator/announce.wav"
+ANNOUNCE_GEN="./radio-generator/run.sh"
 
 ICECAST_HOST="${ICECAST_HOST:-icecast}"
 ICECAST_PORT="${ICECAST_PORT:-8000}"
@@ -32,8 +34,8 @@ write_status() {
     local startedAt="$2"
     local title="${3:-}"
     local artist="${4:-}"
-    local album="${5:-}"
-    local duration="${6:-0}"
+    local duration="${5:-0}"
+    local isAnnounce="$6"
 
     local now
     now=$(date +%s.%N 2>/dev/null || date +%s)
@@ -66,6 +68,9 @@ write_status() {
     local isPodcastJson="false"
     [[ "$isPodcast" == "true" || "$isPodcast" == "1" ]] && isPodcastJson="true"
 
+    local vttFile="/podcasts/podcast.vtt"
+    [[ "$isAnnounce" == "true" || "$isAnnounce" == "1" ]] && vttFile="/announces/announce.vtt"
+
     cat > "$STATUS_JSON" <<EOF
 {
   "isPodcast": $isPodcastJson,
@@ -76,10 +81,9 @@ write_status() {
   "duration": "$duration_readable",
   "time_raw": $currentTime,
   "duration_raw": $duration,
-  "vtt": "/podcasts/podcast.vtt?t=$(date +%s)",
+  "vtt": "$vttFile?t=$(date +%s)",
   "title": "$title",
-  "artist": "$artist",
-  "album": "$album"
+  "artist": "$artist"
 }
 EOF
 }
@@ -174,19 +178,17 @@ play_file() {
     
     # Extraction métadonnées et durée
     local info
-    info=$(ffprobe -v error -show_entries format=duration:format_tags=title,artist,album -of default=noprint_wrappers=1:nokey=1 "$file")
+    info=$(ffprobe -v error -show_entries format=duration:format_tags=title,artist -of default=noprint_wrappers=1:nokey=1 "$file")
     
     local duration=$(echo "$info" | sed -n '1p')
     local title=$(echo "$info" | sed -n '2p')
     local artist=$(echo "$info" | sed -n '3p')
-    local album=$(echo "$info" | sed -n '4p')
 
     [[ -z "$duration" ]] && duration=0
     [[ -z "$title" ]] && title=$(basename "$file")
     
     title=$(echo "$title" | sed 's/"/\\"/g')
     artist=$(echo "$artist" | sed 's/"/\\"/g')
-    album=$(echo "$album" | sed 's/"/\\"/g')
 
     local now_iso
     now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -196,7 +198,7 @@ play_file() {
     (
         # Tant que le processus parent (ffmpeg) tourne
         while kill -0 $BASHPID 2>/dev/null; do
-            write_status false "$now_iso" "$title" "$artist" "$album" "$duration"
+            write_status false "$now_iso" "$title" "$artist" "$duration" false
             sleep 1
         done
     ) &
@@ -220,55 +222,80 @@ seconds_to_next_half_hour() {
     fi
 }
 
+play_podcast() {
+    log "🎙️  Diffusion du podcast"
+    # 1. Extraction de la durée du podcast
+    local duration
+    duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$PODCAST_WAV")
+    [[ -z "$duration" ]] && duration=0
+
+    local start_iso
+    start_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    # 2. Lancement du rafraîchissement du statut en arrière-plan
+    # On passe "true" pour isPodcast, puis les métadonnées spécifiques
+    (
+        while true; do
+            write_status true "$start_iso" "$(get_podcast)" "Radio DEV" "$duration" false
+            sleep 1
+        done
+    ) &
+    STATUS_PID=$!
+
+    # 3. Lecture effective
+    ffmpeg -hide_banner -nostdin -i "$PODCAST_WAV" -f s16le -ar 44100 -ac 2 -loglevel quiet - >> "$FIFO"
+
+    log "🎙️  Podcast terminé"
+    kill "$STATUS_PID" 2>/dev/null || true
+}
+
+play_announce() {
+    log "🎙️  Annonce du podcast"
+    local duration
+    duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$ANNOUNCE_WAV")
+    [[ -z "$duration" ]] && duration=0
+
+    local start_iso
+    start_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    (
+        while true; do
+            write_status true "$start_iso" "Chronique IA" "Radio DEV" "$duration" true
+            sleep 1
+        done
+    ) &
+    STATUS_PID=$!
+
+    ffmpeg -hide_banner -nostdin -i "$ANNOUNCE_WAV" -f s16le -ar 44100 -ac 2 -loglevel quiet - >> "$FIFO"
+
+    log "🎙️  Annonce terminée"
+    kill "$STATUS_PID" 2>/dev/null || true
+}
+
 run_podcast() {
-    if [[ -f "$PODCAST_WAV" ]]; then
-        log "🎙️  Diffusion du podcast"
-        
-        # 1. Extraction de la durée du podcast
-        local duration
-        duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$PODCAST_WAV")
-        [[ -z "$duration" ]] && duration=0
-
-        local start_iso
-        start_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-        # 2. Lancement du rafraîchissement du statut en arrière-plan
-        # On passe "true" pour isPodcast, puis les métadonnées spécifiques
-        (
-            while true; do
-                write_status true "$start_iso" "Chronique IA" "Radio DEV" "" "$duration"
-                sleep 1
-            done
-        ) &
-        STATUS_PID=$!
-
-        # 3. Lecture effective
-        ffmpeg -hide_banner -nostdin -i "$PODCAST_WAV" -f s16le -ar 44100 -ac 2 -loglevel quiet - >> "$FIFO"
-
-        log "🎙️  Podcast terminé"
-        kill "$STATUS_PID" 2>/dev/null || true
-
+    if [[ -f "$PODCAST_WAV" && -f "$ANNOUNCE_WAV" ]]; then
+        play_announce
+        play_podcast
         # Reset du statut vers le mode musique
-        write_status false "" "" "" "" "0"
+        write_status false "" "" "" "0" false
     else
-        log "WARN : $PODCAST_WAV introuvable, diffusion ignorée"
+        log "WARN : $PODCAST_WAV ou $ANNOUNCE_WAV introuvable, diffusion ignorée"
     fi
 
     # --- Suite du script (Génération du prochain podcast) ---
-    start_podcast_generation
+    generate_podcast &
+    GEN_PID=$!
     wait_for_generation_with_music
     log "✅  Prêt pour le prochain podcast"
 }
 
-should_generate_podcast() {
-    local wait_sec
-    wait_sec=$(seconds_to_next_half_hour)
-
-    if (( wait_sec > 600 )); then
-        return 0
-    else
-        return 1
+get_podcast() {
+    if [[ ! -f $PODCAST_TEXT ]]; then
+        echo "Podcast inconnu"
+        return
     fi
+
+    sed -n '2p' $PODCAST_TEXT | cut -c8-
 }
 
 generate_podcast() {
@@ -277,17 +304,8 @@ generate_podcast() {
     bash "$PODCAST_GEN" --lang fr && \
         log "⚙️  Génération terminée" \
         || log "WARN : run.sh a retourné une erreur"
-}
-
-start_podcast_generation() {
-    if should_generate_podcast; then
-        log "🧠 Génération autorisée (créneau OK)"
-        generate_podcast &
-        GEN_PID=$!
-    else
-        log "⏱️ Trop proche du créneau → génération skip"
-        GEN_PID=""
-    fi
+    
+    generate_announce "$(get_podcast)"
 }
 
 wait_for_generation_with_music() {
@@ -304,10 +322,19 @@ wait_for_generation_with_music() {
     GEN_PID=""
 }
 
+generate_announce() {
+    local topic="$1"
+    log "⚙️  Génération de l'annonce en arrière-plan..."
+
+    bash "$ANNOUNCE_GEN" "$topic" && \
+        log "⚙️  Génération terminée" \
+        || log "WARN : run.sh a retourné une erreur"
+}
+
 main() {
     log "📻  Démarrage de la radio"
 
-    write_status false ""
+    write_status false "" "" "" "0" false
 
     echo "#EXTM3U" > "playlist.m3u"
 
@@ -336,32 +363,7 @@ main() {
     start_ffmpeg_streamer
     sleep 4 # Slightly longer wait for pipe initialization
 
-    start_podcast_generation
-    wait_for_generation_with_music
-    log "✅  Prêt pour le prochain podcast"
-
     while true; do
-        local wait_sec
-        wait_sec=$(seconds_to_next_half_hour)
-        log "⏰  Prochain podcast dans ${wait_sec}s"
-
-        rm -f /tmp/podcast_trigger
-        ( sleep "$wait_sec" && echo 1 > /tmp/podcast_trigger ) &
-        TIMER_PID=$!
-
-        while true; do
-            play_next_track
-
-            if [[ -f /tmp/podcast_trigger ]]; then
-                log "⏰  C'est l'heure de la chronique !"
-                rm -f /tmp/podcast_trigger
-                break
-            fi
-        done
-
-        kill "$TIMER_PID" 2>/dev/null || true
-        TIMER_PID=""
-
         run_podcast
     done
 }
@@ -372,6 +374,7 @@ cleanup() {
     [[ -n "${TIMER_PID:-}"  ]] && kill "$TIMER_PID"  2>/dev/null || true
     [[ -n "${FFMPEG_PID:-}" ]] && kill "$FFMPEG_PID" 2>/dev/null || true
     [[ -n "${GEN_PID:-}"    ]] && kill "$GEN_PID"    2>/dev/null || true
+    write_status false "" "" "" "0" false
     rm -f "$FIFO"
     exit 0
 }
