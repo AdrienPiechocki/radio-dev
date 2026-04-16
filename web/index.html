@@ -368,6 +368,9 @@ async function fetchMetadata() {
                     cuesIndex = [];
                 }
             }, delay);
+        } else if(!data.isPodcast) {
+            isPodcastMode = false;
+            cuesIndex = [];
         }
     } catch (e) { console.error("Metadata Error:", e); }
     finally { isFetching = false; }
