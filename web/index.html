@@ -413,12 +413,17 @@ function animate() {
         duration.innerText = activeData.duration || "--:--";
 
         // Sous-titres : utilisez aussi activeData
-        if (isPodcastMode && cuesIndex.length > 0 && !audio.paused) {
+        if (isPodcastMode && cuesIndex.length > 0 && !audio.paused && displayedPodcastData?.isPodcast) {
             const currentCue = cuesIndex.find(cue => currentPos >= cue.start && currentPos <= cue.end);
             const newText = currentCue ? currentCue.text : "";
             if (subDiv.innerHTML !== newText) {
                 subDiv.innerHTML = newText;
                 subDiv.style.opacity = (newText === "") ? "0" : "1";
+            }
+        } else if (!isPodcastMode || !displayedPodcastData?.isPodcast) {
+            if (subDiv.innerHTML !== "") {
+                subDiv.innerHTML = "";
+                subDiv.style.opacity = "0";
             }
         }
     }
