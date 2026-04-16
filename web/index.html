@@ -344,7 +344,7 @@ async function fetchMetadata() {
     if (isFetching) return;
     isFetching = true;
     try {
-        const res = await fetch('/podcasts/podcast-status.json?t=' + Date.now());
+        const res = await fetch('/podcasts/status.json?t=' + Date.now());
         const data = await res.json();
         
         // On stocke la mise à jour serveur
@@ -456,7 +456,7 @@ volumeSlider.addEventListener('input', (e) => audio.volume = e.target.value);
 async function start() {
     fetchMetadata();
     animate();
-    const res = await fetch('/podcasts/podcast-status.json?t=' + Date.now());
+    const res = await fetch('/podcasts/status.json?t=' + Date.now());
     const data = await res.json();
     data.fetchedAt = Date.now() / 1000;  // ← heure locale au moment du fetch
     updateUI(data);

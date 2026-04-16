@@ -7,7 +7,7 @@ set -euo pipefail
 
 PLAYLIST_POS=0
 
-STATUS_JSON="./podcast-generator/podcast-status.json"
+STATUS_JSON="./status.json"
 
 PODCAST_WAV="./podcast-generator/podcast.wav"
 PODCAST_GEN="./podcast-generator/run.sh"
@@ -34,8 +34,6 @@ write_status() {
     local artist="${4:-}"
     local album="${5:-}"
     local duration="${6:-0}"
-
-    mkdir -p "$(dirname "$STATUS_JSON")"
 
     local now
     now=$(date +%s.%N 2>/dev/null || date +%s)
@@ -308,8 +306,6 @@ wait_for_generation_with_music() {
 
 main() {
     log "📻  Démarrage de la radio"
-
-    mkdir -p "$(dirname "$STATUS_JSON")"
 
     write_status false ""
 
