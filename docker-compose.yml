@@ -29,7 +29,6 @@ services:
       - ICECAST_MOUNT=/radio
     volumes:
       - ./:/radio/
-      - /tmp:/tmp   # 🔥 PARTAGE POUR LE SKIP
     networks:
       - radio-net
 
@@ -42,19 +41,6 @@ services:
       - ./web:/usr/share/nginx/html:ro
       - ./podcast-generator:/data/podcasts:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    networks:
-      - radio-net
-
-  skip-api:
-    image: python:3.11-alpine
-    container_name: radio-skip
-    volumes:
-      - /tmp:/tmp
-      - ./skip_server.py:/app/skip_server.py
-    working_dir: /app
-    command: python skip_server.py
-    ports:
-      - "3000:3000"
     networks:
       - radio-net
 

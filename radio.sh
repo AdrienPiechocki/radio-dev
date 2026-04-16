@@ -115,10 +115,6 @@ EOF
 }
 
 play_next_track() {
-    if [[ -f "/tmp/skip_track" ]]; then
-        rm -f "/tmp/skip_track"
-        log "⏭️ Skip détecté avant le début de la piste"
-    fi
     local playlist_dir
     playlist_dir="$(dirname "$(realpath "$PLAYLIST")")"
     
@@ -132,7 +128,10 @@ play_next_track() {
             
             if [[ -f "$track" ]]; then
                 log "♫  $(basename "$track")"
-                play_file "$track"
+                play_file "$track" &
+                MUSIC_PID=$!
+                wait "$MUSIC_PID" || true
+                MUSIC_PID=""
             else
                 log "WARN : introuvable : $track, ignoré"
             fi
@@ -175,9 +174,10 @@ start_ffmpeg_streamer() {
 play_file() {
     local file="$1"
     
-    # Extraction métadonnées (votre code actuel)
+    # Extraction métadonnées et durée
     local info
     info=$(ffprobe -v error -show_entries format=duration:format_tags=title,artist,album -of default=noprint_wrappers=1:nokey=1 "$file")
+    
     local duration=$(echo "$info" | sed -n '1p')
     local title=$(echo "$info" | sed -n '2p')
     local artist=$(echo "$info" | sed -n '3p')
@@ -186,41 +186,28 @@ play_file() {
     [[ -z "$duration" ]] && duration=0
     [[ -z "$title" ]] && title=$(basename "$file")
     
-    local now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    title=$(echo "$title" | sed 's/"/\\"/g')
+    artist=$(echo "$artist" | sed 's/"/\\"/g')
+    album=$(echo "$album" | sed 's/"/\\"/g')
 
-    # --- MONITEUR DE SKIP ---
-    # On lance ffmpeg en arrière-plan pour pouvoir le contrôler
-    ffmpeg -hide_banner -nostdin -i "$file" -f s16le -ar 44100 -ac 2 -loglevel quiet - >> "$FIFO" &
-    local FFMPEG_PLAY_PID=$!
+    local now_iso
+    now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-    # On lance un moniteur qui attend soit la fin du morceau, soit le fichier de skip
+    # --- BOUCLE DE MISE À JOUR DU STATUT ---
+    # On lance un sous-processus qui met à jour le JSON chaque seconde
     (
-        while kill -0 $FFMPEG_PLAY_PID 2>/dev/null; do
-            if [[ -f "/tmp/skip_track" ]]; then
-                log "⏭️ Skip reçu ! Arrêt de la piste en cours."
-                rm -f "/tmp/skip_track"
-                kill $FFMPEG_PLAY_PID 2>/dev/null || true
-                break
-            fi
-            # Mise à jour du JSON de statut (optionnel, réutilise votre logique)
+        # Tant que le processus parent (ffmpeg) tourne
+        while kill -0 $BASHPID 2>/dev/null; do
             write_status false "$now_iso" "$title" "$artist" "$album" "$duration"
             sleep 1
         done
     ) &
-    local MONITOR_PID=$!
+    local UPDATE_PID=$!
 
-    # On attend que ffmpeg finisse (naturellement ou tué par le moniteur)
-    wait $FFMPEG_PLAY_PID 2>/dev/null || true
-    kill $MONITOR_PID 2>/dev/null || true
-}
+    # Lecture effective
+    ffmpeg -hide_banner -nostdin -i "$file" -f s16le -ar 44100 -ac 2 -loglevel quiet - >> "$FIFO"
 
-skip_track() {
-    if [[ -n "${MUSIC_PID:-}" ]]; then
-        log "⏭️  Skip demandé (Signal SIGTERM envoyé à $MUSIC_PID)"
-        kill "$MUSIC_PID" 2>/dev/null || true
-    else
-        log "⚠️  Aucune piste en cours de lecture à sauter."
-    fi
+    kill "$UPDATE_PID" 2>/dev/null || true
 }
 
 seconds_to_next_half_hour() {
@@ -321,8 +308,7 @@ wait_for_generation_with_music() {
 
 main() {
     log "📻  Démarrage de la radio"
-    
-    rm -f "/tmp/skip_track"
+
     mkdir -p "$(dirname "$STATUS_JSON")"
 
     write_status false ""
