@@ -1,6 +1,6 @@
 services:
   icecast:
-    image: moul/icecast
+    image: deepcomp/icecast2
     container_name: radio-icecast
     restart: unless-stopped
     ports:
@@ -54,6 +54,7 @@ services:
       - ollama_data:/root/.ollama
     networks:
       - radio-net
+    entrypoint: /bin/sh -c "ollama serve & sleep 5 && ollama pull gemma3 && wait"
 
 networks:
   radio-net:

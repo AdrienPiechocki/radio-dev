@@ -465,16 +465,15 @@ generate_announce() {
 }
 
 generate_forecast() {
-    local city="$1"
-    log "⚙️  Génération météo pour $city..."
+    log "⚙️  Génération bultin météo..."
     local hour
     hour=$(date +%H)
     if (( 10#$hour >= 18 )); then
-        bash "$RADIO_GEN" "meteo_demain" "$city" && \
+        bash "$RADIO_GEN" "meteo_demain" "" && \
             log "⚙️  Météo générée (soir)" || \
             log "WARN : meteo run.sh erreur"
     else
-        bash "$RADIO_GEN" "meteo" "$city" && \
+        bash "$RADIO_GEN" "meteo" "" && \
             log "⚙️  Météo générée" || \
             log "WARN : meteo run.sh erreur"
     fi
@@ -485,7 +484,7 @@ generate_news() {
     bash "$RADIO_GEN" "news" "https://www.france24.com/fr/rss" && \
         log "⚙️  Flash Info générée" || \
         log "WARN : news run.sh erreur"
-    generate_forecast "Maisons-Laffitte"
+    generate_forecast
 }
 
 wait_for_generation_with_music() {
