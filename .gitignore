@@ -1,6 +1,4 @@
 music/
-playlist.m3u
 podcast-generator/
-*.wav
-*.vtt
-radio-generator/.venv/
+radio-generator/
+playlist.m3u

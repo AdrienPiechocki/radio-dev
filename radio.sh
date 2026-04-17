@@ -6,6 +6,9 @@
 set -euo pipefail
 export TZ="Europe/Paris"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 PLAYLIST_POS=0
 
 STATUS_JSON="./status.json"
@@ -577,6 +580,20 @@ get_next_track_duration() {
 main() {
     log "📻  Démarrage de la radio"
     write_status "Musique" "" "" "" "0" ""
+
+    if [[ -d "radio-generator/.git" ]]; then
+        (cd radio-generator && git pull)
+    else
+        git clone https://github.com/AdrienPiechocki/radio-generator.git
+    fi
+
+    if [[ -d "podcast-generator/.git" ]]; then
+        (cd podcast-generator && git pull)
+    else
+        git clone https://github.com/AdrienPiechocki/podcast-generator.git
+    fi
+
+    cd "$SCRIPT_DIR"
 
     [[ -f $PODCAST_WAV ]] && { rm -f $PODCAST_WAV; }
     [[ -f $ANNOUNCE_WAV ]] && { rm -f $ANNOUNCE_WAV; }
