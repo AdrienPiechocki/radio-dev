@@ -356,7 +356,6 @@ let offsetAtPlay       = 0;
 let userOffsetCorrection = -4.096;
 let baseServerNow = 0;
 let baseLocalTime = 0;
-let serverTime = 0;
 
 function adjSync(val) {
     userOffsetCorrection += val;
@@ -399,7 +398,7 @@ function togglePlay() {
             offsetAtPlay = (currentPodcastData.serverNow + secondsSinceFetch) - start;
         }
         playBtn.classList.add('playing');
-        audio.src = '/icecast/radio?v=' + serverTime;
+        audio.src = '/icecast/radio?v=' + offsetAtPlay || Date.now();
         audio.play()
     } else {
         audio.pause();
@@ -414,12 +413,13 @@ async function fetchMetadata() {
     try {
         const res = await fetch('/data/status.json?t=' + Date.now());
         const data = await res.json();
+        data.fetchedAt = Date.now() / 1000;
         
         const prevVtt = normalizeVtt(currentPodcastData?.vtt);
         currentPodcastData = data;
         baseServerNow = data.serverNow;
         baseLocalTime = Date.now() / 1000;
-        serverTime = data.serverNow;
+                
         // Si changement de morceau
         if (data.title !== lastTrackTitle || normalizeVtt(data.vtt) !== prevVtt) {
             lastTrackTitle = data.title;
