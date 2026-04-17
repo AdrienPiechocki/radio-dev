@@ -398,7 +398,6 @@ function togglePlay() {
             offsetAtPlay = (currentPodcastData.serverNow + secondsSinceFetch) - start;
         }
         playBtn.classList.add('playing');
-        audio.src = '/icecast/radio?v=' + offsetAtPlay;
         audio.play()
     } else {
         audio.pause();
@@ -426,7 +425,7 @@ async function fetchMetadata() {
             const delay = Math.abs(userOffsetCorrection) * 1000;
             audio.src = '/icecast/radio?v=' + baseServerNow;
             console.log(baseServerNow);
-            
+
             setTimeout(async () => {
                 displayedPodcastData = data; 
                 updateUI(data);
