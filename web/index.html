@@ -315,7 +315,7 @@
     </div>
 
     <div class="controls">
-        <audio id="radio-audio" preload="auto" crossorigin="anonymous">
+        <audio id="radio-audio" crossorigin="anonymous">
             <source src="/icecast/radio" type="audio/mpeg">
         </audio>
 
@@ -356,6 +356,7 @@ let offsetAtPlay       = 0;
 let userOffsetCorrection = -4.096;
 let baseServerNow = 0;
 let baseLocalTime = 0;
+let serverTime = 0;
 
 function adjSync(val) {
     userOffsetCorrection += val;
@@ -398,7 +399,7 @@ function togglePlay() {
             offsetAtPlay = (currentPodcastData.serverNow + secondsSinceFetch) - start;
         }
         playBtn.classList.add('playing');
-        audio.src = '/icecast/radio?v=' + Date.now();
+        audio.src = '/icecast/radio?v=' + serverTime;
         audio.play()
     } else {
         audio.pause();
@@ -418,7 +419,7 @@ async function fetchMetadata() {
         currentPodcastData = data;
         baseServerNow = data.serverNow;
         baseLocalTime = Date.now() / 1000;
-
+        serverTime = data.serverNow;
         // Si changement de morceau
         if (data.title !== lastTrackTitle || normalizeVtt(data.vtt) !== prevVtt) {
             lastTrackTitle = data.title;
@@ -460,7 +461,6 @@ function animate() {
         
         // On utilise le serverNow du moment du fetch
         let currentPos = (baseServerNow + elapsed) - start + userOffsetCorrection;
-
         const durationRaw = activeData.duration_raw || 1;
 
         // Clamp pour éviter les valeurs bizarres en fin de morceau
@@ -516,8 +516,6 @@ const volumeSlider = document.getElementById('volume-slider');
 volumeSlider.addEventListener('input', (e) => audio.volume = e.target.value);
 
 async function start() {
-    audio.src = '/icecast/radio?v=' + Date.now();
-    audio.load();
     fetchMetadata();
     animate();
     const res = await fetch('/data/status.json?t=' + Date.now());
