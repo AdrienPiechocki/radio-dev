@@ -75,6 +75,7 @@
         .track-info { margin-bottom: 25px; }
         #track-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 6px; display: block; }
         #track-artist { font-size: 1rem; color: var(--accent); display: block; }
+        #track-album { font-size: 0.85rem; color: var(--text-dim); margin-top: 4px; display: block; }
 
         /* --- Progress Bar --- */
         .progress-container {
@@ -235,6 +236,7 @@
     <div class="track-info">
         <span id="track-title">Titre de l'émission</span>
         <span id="track-artist">Nom de l'artiste</span>
+        <span id="track-album">Album ou Sous-titre</span>
     </div>
 
     <div class="progress-container">
@@ -269,6 +271,7 @@ const subDiv   = document.getElementById('subtitles');
 const debugDiv = document.getElementById('debug');
 const playBtn  = document.getElementById('play-btn');
 const artist   = document.getElementById('track-artist');
+const album    = document.getElementById('track-album');
 const title    = document.getElementById('track-title');
 const time     = document.getElementById('current-time');
 const duration = document.getElementById('duration');
@@ -277,7 +280,7 @@ const progressFill = document.getElementById('progress-fill');
 let displayedPodcastData = null;
 let currentPodcastData = null;
 let cuesIndex          = [];
-let isPodcastMode      = false;
+let hasSubtitles       = false;
 let lastTrackTitle     = "";
 let isFetching         = false;
 let lastPodcastUrl     = ""; 
@@ -292,6 +295,10 @@ let baseLocalTime = 0;
 
 function adjSync(val) {
     userOffsetCorrection += val;
+}
+
+function normalizeVtt(url) {
+    return url ? url.split('?')[0] : '';
 }
 
 function parseVttTime(t) {
@@ -341,15 +348,16 @@ async function fetchMetadata() {
     if (isFetching) return;
     isFetching = true;
     try {
-        const res = await fetch('/podcasts/status.json?t=' + Date.now());
+        const res = await fetch('/data/status.json?t=' + Date.now());
         const data = await res.json();
         
+        const prevVtt = normalizeVtt(currentPodcastData?.vtt);
         currentPodcastData = data;
         baseServerNow = data.serverNow;
         baseLocalTime = Date.now() / 1000;
 
         // Si changement de morceau
-        if (data.title !== lastTrackTitle) {
+        if (data.title !== lastTrackTitle || normalizeVtt(data.vtt) !== prevVtt) {
             lastTrackTitle = data.title;
             const delay = Math.abs(userOffsetCorrection) * 1000;
             
@@ -358,18 +366,18 @@ async function fetchMetadata() {
                 updateUI(data);
 
                 // Charger le VTT SEULEMENT au moment où l'affichage bascule
-                if (data.isPodcast) {
-                    isPodcastMode = true;
+                if (data.vtt) {
+                    hasSubtitles = true;
                     const vttRes = await fetch(data.vtt);
                     const vttText = await vttRes.text();
                     cuesIndex = parseVTT(vttText);
                 } else {
-                    isPodcastMode = false;
+                    hasSubtitles = false;
                     cuesIndex = [];
                 }
             }, delay);
-        } else if(!data.isPodcast) {
-            isPodcastMode = false;
+        } else if(!data.vtt) {
+            hasSubtitles = false;
             cuesIndex = [];
         }
     } catch (e) { console.error("Metadata Error:", e); }
@@ -401,13 +409,13 @@ function animate() {
         duration.innerText = activeData.duration || "--:--";
 
         // Sous-titres : utilisez aussi activeData
-        if (isPodcastMode && cuesIndex.length > 0 && !audio.paused) {
+        if (hasSubtitles && cuesIndex.length > 0 && !audio.paused) {
             const currentCue = cuesIndex.find(cue => currentPos >= cue.start && currentPos <= cue.end);
             const newText = currentCue ? currentCue.text : "";
             if (subDiv.innerHTML !== newText) {
                 subDiv.innerHTML = newText;
             }
-        } else if (!isPodcastMode || !displayedPodcastData?.isPodcast) {
+        } else if (!hasSubtitles || displayedPodcastData?.event === "Musique") {
             // On vide cuesIndex seulement quand la position a dépassé la durée
             const activeData = displayedPodcastData || currentPodcastData;
             const durationRaw = activeData?.duration_raw || 0;
@@ -424,7 +432,8 @@ function animate() {
 function updateUI(data) {
     title.innerText  = data.title  || "Titre inconnu";
     artist.innerText = data.artist || "Artiste inconnu";
-    document.getElementById('metadata').textContent = data.isPodcast ? 'Podcast' : 'Musique';
+    album.innerText  = data.album  || "Album inconnu";
+    document.getElementById('metadata').textContent = data.event;
     lastTrackTitle = data.title;
 
     // ✅ NOUVEAU : réinitialiser la synchro à chaque changement de track
@@ -447,7 +456,7 @@ volumeSlider.addEventListener('input', (e) => audio.volume = e.target.value);
 async function start() {
     fetchMetadata();
     animate();
-    const res = await fetch('/podcasts/status.json?t=' + Date.now());
+    const res = await fetch('/data/status.json?t=' + Date.now());
     const data = await res.json();
     data.fetchedAt = Date.now() / 1000;  // ← heure locale au moment du fetch
     updateUI(data);
