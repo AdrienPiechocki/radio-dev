@@ -61,6 +61,13 @@
 
         /* --- Album Art & Track Info --- */
         .album-art {
+            background: linear-gradient(45deg, #2a2a2a, #3a3a3a);
+            margin: 0 auto 25px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
             width: 60vw;
             max-width: 240px;
             aspect-ratio: 1 / 1;
@@ -70,7 +77,6 @@
         .track-info { margin-bottom: 25px; }
         #track-title { font-size: clamp(1.1rem, 4vw, 1.5rem); font-weight: 700; margin-bottom: 6px; display: block; }
         #track-artist { font-size: clamp(0.9rem, 3vw, 1rem); color: var(--accent); display: block; }
-        #track-album { font-size: 0.85rem; color: var(--text-dim); margin-top: 4px; display: block; }
 
         /* --- Progress Bar --- */
         .progress-container {
@@ -267,10 +273,6 @@
                 font-size: 0.9rem;
             }
 
-            #track-album {
-                font-size: 0.75rem;
-            }
-
             #play-btn {
                 width: 60px;
                 height: 60px;
@@ -300,7 +302,6 @@
     <div class="track-info">
         <span id="track-title">Titre de l'émission</span>
         <span id="track-artist">Nom de l'artiste</span>
-        <span id="track-album">Album ou Sous-titre</span>
     </div>
 
     <div class="progress-container">
@@ -314,7 +315,7 @@
     </div>
 
     <div class="controls">
-        <audio id="radio-audio" crossorigin="anonymous">
+        <audio id="radio-audio" preload="auto" crossorigin="anonymous">
             <source src="/icecast/radio" type="audio/mpeg">
         </audio>
 
@@ -335,7 +336,6 @@ const subDiv   = document.getElementById('subtitles');
 const debugDiv = document.getElementById('debug');
 const playBtn  = document.getElementById('play-btn');
 const artist   = document.getElementById('track-artist');
-const album    = document.getElementById('track-album');
 const title    = document.getElementById('track-title');
 const time     = document.getElementById('current-time');
 const duration = document.getElementById('duration');
@@ -397,10 +397,9 @@ function togglePlay() {
             const secondsSinceFetch = playClickTime - currentPodcastData.fetchedAt;
             offsetAtPlay = (currentPodcastData.serverNow + secondsSinceFetch) - start;
         }
+        playBtn.classList.add('playing');
         audio.src = '/icecast/radio?v=' + Date.now();
-        audio.play().then(() => {
-            playBtn.classList.add('playing');
-        });
+        audio.play()
     } else {
         audio.pause();
         playBtn.classList.remove('playing');
@@ -496,7 +495,6 @@ function animate() {
 function updateUI(data) {
     title.innerText  = data.title  || "Titre inconnu";
     artist.innerText = data.artist || "Artiste inconnu";
-    album.innerText  = data.album  || "Album inconnu";
     document.getElementById('metadata').textContent = data.event;
     lastTrackTitle = data.title;
 
@@ -518,6 +516,8 @@ const volumeSlider = document.getElementById('volume-slider');
 volumeSlider.addEventListener('input', (e) => audio.volume = e.target.value);
 
 async function start() {
+    audio.src = '/icecast/radio?v=' + Date.now();
+    audio.load();
     fetchMetadata();
     animate();
     const res = await fetch('/data/status.json?t=' + Date.now());

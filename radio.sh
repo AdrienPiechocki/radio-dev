@@ -192,7 +192,6 @@ write_status() {
     local title="${3:-}"
     local artist="${4:-}"
     local duration="${5:-0}"
-    local album="${6:-}"
 
     local now
     now=$(date +%s.%N 2>/dev/null || date +%s)
@@ -252,7 +251,6 @@ write_status() {
   "vtt": "$vttFile",
   "title": "$title",
   "artist": "$artist",
-  "album": "$album",
   $next_field
 }
 EOF
@@ -286,26 +284,24 @@ start_ffmpeg_streamer() {
 play_file() {
     local file="$1"
 
-    local info duration title artist album
-    info=$(ffprobe -v error -show_entries format=duration:format_tags=title,artist,album \
+    local info duration title artist
+    info=$(ffprobe -v error -show_entries format=duration:format_tags=title,artist \
            -of default=noprint_wrappers=1:nokey=1 "$file")
     duration=$(echo "$info" | sed -n '1p')
     title=$(echo "$info"    | sed -n '2p')
     artist=$(echo "$info"   | sed -n '3p')
-    album=$(echo "$info"   | sed -n '4p')
 
     [[ -z "$duration" ]] && duration=0
     [[ -z "$title"    ]] && title=$(basename "$file")
     title=$(echo "$title"   | sed 's/"/\\"/g')
     artist=$(echo "$artist" | sed 's/"/\\"/g')
-    album=$(echo "$album" | sed 's/"/\\"/g')
 
     local now_iso
     now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
     (
         while kill -0 $BASHPID 2>/dev/null; do
-            write_status "Musique" "$now_iso" "$title" "$artist" "$duration" "$album"
+            write_status "Musique" "$now_iso" "$title" "$artist" "$duration"
             sleep 1
         done
     ) &
@@ -364,7 +360,7 @@ play_podcast() {
     start_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
     (while true; do
-        write_status "Podcast" "$start_iso" "$(get_podcast)" "Radio DEV" "$duration" ""
+        write_status "Podcast" "$start_iso" "$(get_podcast)" "Radio DEV" "$duration"
         sleep 1
     done) &
     STATUS_PID=$!
@@ -385,7 +381,7 @@ play_announce() {
     start_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
     (while true; do
-        write_status "Annonce" "$start_iso" "Chronique IA" "Radio DEV" "$duration" ""
+        write_status "Annonce" "$start_iso" "Chronique IA" "Radio DEV" "$duration"
         sleep 1
     done) &
     STATUS_PID=$!
@@ -406,7 +402,7 @@ play_news() {
     start_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
     (while true; do
-        write_status "News" "$start_iso" "Flash info" "Radio DEV" "$duration" ""
+        write_status "News" "$start_iso" "Flash info" "Radio DEV" "$duration"
         sleep 1
     done) &
     STATUS_PID=$!
@@ -427,7 +423,7 @@ play_forecast() {
     start_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
     (while true; do
-        write_status "Météo" "$start_iso" "Buletin Météo" "Radio DEV" "$duration" ""
+        write_status "Météo" "$start_iso" "Buletin Météo" "Radio DEV" "$duration"
         sleep 1
     done) &
     STATUS_PID=$!
@@ -578,7 +574,7 @@ get_next_track_duration() {
 
 main() {
     log "📻  Démarrage de la radio"
-    write_status "Musique" "" "" "" "0" ""
+    write_status "Musique" "" "" "" "0"
 
     if [[ -d "radio-generator/.git" ]]; then
         (cd radio-generator && git pull)
@@ -631,7 +627,7 @@ cleanup() {
     [[ -n "${TIMER_PID:-}"  ]] && kill "$TIMER_PID"  2>/dev/null || true
     [[ -n "${FFMPEG_PID:-}" ]] && kill "$FFMPEG_PID" 2>/dev/null || true
     [[ -n "${GEN_PID:-}"    ]] && kill "$GEN_PID"    2>/dev/null || true
-    write_status "Musique" "" "" "" "0" ""
+    write_status "Musique" "" "" "" "0"
     rm -f "$FIFO"
     exit 0
 }
