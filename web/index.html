@@ -398,7 +398,7 @@ function togglePlay() {
             offsetAtPlay = (currentPodcastData.serverNow + secondsSinceFetch) - start;
         }
         playBtn.classList.add('playing');
-        audio.src = '/icecast/radio?v=' + offsetAtPlay || Date.now();
+        audio.src = '/icecast/radio?v=' + offsetAtPlay;
         audio.play()
     } else {
         audio.pause();
@@ -424,11 +424,12 @@ async function fetchMetadata() {
         if (data.title !== lastTrackTitle || normalizeVtt(data.vtt) !== prevVtt) {
             lastTrackTitle = data.title;
             const delay = Math.abs(userOffsetCorrection) * 1000;
+            audio.src = '/icecast/radio?v=' + baseServerNow;
             
             setTimeout(async () => {
                 displayedPodcastData = data; 
                 updateUI(data);
-
+                
                 // Charger le VTT SEULEMENT au moment où l'affichage bascule
                 if (data.vtt) {
                     hasSubtitles = true;
