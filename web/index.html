@@ -425,6 +425,7 @@ async function fetchMetadata() {
             lastTrackTitle = data.title;
             const delay = Math.abs(userOffsetCorrection) * 1000;
             audio.src = '/icecast/radio?v=' + baseServerNow;
+            console.log(baseServerNow);
             
             setTimeout(async () => {
                 displayedPodcastData = data; 
