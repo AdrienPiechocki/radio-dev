@@ -59,7 +59,7 @@ services:
         echo 'Waiting for Ollama...';
         sleep 2;
       done &&
-      ollama pull gemma3 &&
+      ollama pull gemma3n &&
       wait"
 
 networks:
