@@ -13,6 +13,7 @@ PLAYLIST_POS=0
 
 STATUS_JSON="./status.json"
 SCHEDULE_JSON="./schedule.json"
+LAST_EVENT_FILE="./.last_event"          # ← persiste entre redémarrages
 
 PODCAST_WAV="./podcast-generator/podcast.wav"
 PODCAST_GEN="./podcast-generator/run.sh"
@@ -40,100 +41,161 @@ log() { echo "[$(date '+%H:%M:%S %Z')] $*"; }
 # SCHEDULING
 # =============================================================================
 
-# Retourne l'event_type si un event est schedulé dans les N prochaines secondes
-# Usage: get_upcoming_event [lookahead_seconds=120]
-get_upcoming_event() {
-    local lookahead="${1:-120}"
+# Lit/écrit l'ID du dernier event exécuté (persiste au redémarrage)
+read_last_event()  { [[ -f "$LAST_EVENT_FILE" ]] && cat "$LAST_EVENT_FILE" || echo ""; }
+write_last_event() { echo "$1" > "$LAST_EVENT_FILE"; }
+
+# Retourne le prochain event FUTUR (heure > maintenant + grace_sec)
+# Format stdout : "HH:MM:type"  — vide si schedule absent
+get_next_future_event() {
+    local grace="${1:-0}"
     [[ -f "$SCHEDULE_JSON" ]] || return 0
+    python3 -c "
+import json, datetime, sys
 
-    local now_min now_hour now_total_min
-    now_hour=$(date +%-H)
-    now_min=$(date +%-M)
-    now_total_min=$(( now_hour * 60 + now_min ))
-
-    python3 - <<EOF
-import json, sys
-
-with open("$SCHEDULE_JSON") as f:
-    schedule = json.load(f)
-
-now_total = $now_total_min
-lookahead_min = $lookahead / 60.0
-
-for time_str, event_type in schedule.items():
-    parts = time_str.strip().split(":")
-    if len(parts) != 2:
-        continue
-    h, m = int(parts[0]), int(parts[1])
-    event_total = h * 60 + m
-
-    # Gestion minuit (ex: event à 00:30 depuis 23:50)
-    diff = event_total - now_total
-    if diff < -720:   # plus de 12h dans le passé → probablement demain
-        diff += 1440
-    elif diff > 720:  # plus de 12h dans le futur → probablement hier
-        diff -= 1440
-
-    if 0 <= diff <= lookahead_min:
-        print(event_type)
-        sys.exit(0)
-
-sys.exit(0)
-EOF
-}
-
-# Retourne l'horaire exact (HH:MM) du prochain event à venir
-get_next_event_time() {
-    [[ -f "$SCHEDULE_JSON" ]] || return 0
-
-    python3 - <<EOF
-# À remplacer dans votre fonction get_next_event_time
-import json, sys, datetime
-
-with open("$SCHEDULE_JSON") as f:
+with open('$SCHEDULE_JSON') as f:
     schedule = json.load(f)
 
 now = datetime.datetime.now()
-now_total = now.hour * 60 + now.minute
+now_min = now.hour * 60 + now.minute + now.second / 60
+grace_min = $grace / 60.0
 
-# On trie les événements par heure
-sorted_events = sorted(schedule.items(), key=lambda x: int(x[0].split(':')[0])*60 + int(x[0].split(':')[1]))
+events = []
+for time_str, etype in schedule.items():
+    parts = time_str.strip().split(':')
+    if len(parts) != 2: continue
+    h, m = int(parts[0]), int(parts[1])
+    events.append((h * 60 + m, f'{h:02d}:{m:02d}', etype))
+events.sort()
 
-# On cherche le dernier événement dont l'heure est passée
-last_due_event = None
-for time_str, event_type in sorted_events:
-    h, m = map(int, time_str.split(":"))
-    event_total = h * 60 + m
-    
-    if now_total >= event_total:
-        last_due_event = (time_str, event_type)
-    else:
-        # Dès qu'on trouve un event dans le futur, on s'arrête
+for total, hhmm, etype in events:
+    if total > now_min + grace_min:
+        print(f'{hhmm}:{etype}')
+        sys.exit(0)
+
+if events:
+    _, hhmm, etype = events[0]
+    print(f'{hhmm}:{etype}')
+" 2>/dev/null || true
+}
+
+# Retourne les events passés non encore joués depuis le dernier redémarrage
+# Format stdout : une ligne "HH:MM:type" par event manqué, ordre chronologique
+get_missed_events() {
+    local last_id
+    last_id=$(read_last_event)
+    [[ -f "$SCHEDULE_JSON" ]] || return 0
+    python3 -c "
+import json, datetime, sys
+
+with open('$SCHEDULE_JSON') as f:
+    schedule = json.load(f)
+
+now = datetime.datetime.now()
+now_min = now.hour * 60 + now.minute + now.second / 60
+last_id = '$last_id'
+
+events = []
+for time_str, etype in schedule.items():
+    parts = time_str.strip().split(':')
+    if len(parts) != 2: continue
+    h, m = int(parts[0]), int(parts[1])
+    events.append((h * 60 + m, f'{h:02d}:{m:02d}', etype))
+events.sort()
+
+missed = []
+for total, hhmm, etype in events:
+    if total > now_min:
         break
+    event_id = f'{hhmm}-{etype}'
+    if last_id == '':
+        missed = [(hhmm, etype)]
+    elif event_id == last_id:
+        missed = []
+    else:
+        missed.append((hhmm, etype))
 
-if last_due_event:
-    # On renvoie l'event le plus récent qui est "dû"
-    print(f"TRIGGER:{last_due_event[0]}:{last_due_event[1]}")
-else:
-    # Sinon on affiche juste le prochain pour le statut
-    next_event = sorted_events[0] # Simplification : premier de la liste
-    print(f"WAIT:{next_event[0]}:{next_event[1]}")
-EOF
+for hhmm, etype in missed:
+    print(f'{hhmm}:{etype}')
+" 2>/dev/null || true
+}
+
+# Retourne le prochain event à venir (pour le status JSON)
+# Format stdout : "WAIT:HH:MM:type"
+get_next_event_time() {
+    [[ -f "$SCHEDULE_JSON" ]] || return 0
+    python3 -c "
+import json, datetime, sys
+
+with open('$SCHEDULE_JSON') as f:
+    schedule = json.load(f)
+
+now = datetime.datetime.now()
+now_min = now.hour * 60 + now.minute + now.second / 60
+
+events = []
+for time_str, etype in schedule.items():
+    parts = time_str.strip().split(':')
+    if len(parts) != 2: continue
+    h, m = int(parts[0]), int(parts[1])
+    events.append((h * 60 + m, f'{h:02d}:{m:02d}', etype))
+events.sort()
+
+for total, hhmm, etype in events:
+    if total > now_min:
+        print(f'WAIT:{hhmm}:{etype}')
+        sys.exit(0)
+
+if events:
+    _, hhmm, etype = events[0]
+    print(f'WAIT:{hhmm}:{etype}')
+" 2>/dev/null || true
+}
+
+# Retourne l'event qui DOIT être joué maintenant :
+# = heure passée depuis <= window_sec ET pas encore joué
+# Format stdout : "HH:MM:type" — vide sinon
+# Usage: get_due_event [window_sec=300]
+get_due_event() {
+    local window="${1:-300}"
+    local last_id
+    last_id=$(read_last_event)
+    [[ -f "$SCHEDULE_JSON" ]] || return 0
+    python3 -c "
+import json, datetime, sys
+
+with open('$SCHEDULE_JSON') as f:
+    schedule = json.load(f)
+
+now = datetime.datetime.now()
+now_min = now.hour * 60 + now.minute + now.second / 60
+window_min = $window / 60.0
+last_id = '$last_id'
+
+events = []
+for time_str, etype in schedule.items():
+    parts = time_str.strip().split(':')
+    if len(parts) != 2: continue
+    h, m = int(parts[0]), int(parts[1])
+    events.append((h * 60 + m, f'{h:02d}:{m:02d}', etype))
+events.sort()
+
+for total, hhmm, etype in events:
+    event_id = f'{hhmm}-{etype}'
+    if (now_min - window_min) <= total <= (now_min + 1) and event_id != last_id:
+        print(f'{hhmm}:{etype}')
+        sys.exit(0)
+" 2>/dev/null || true
 }
 
 # Secondes restantes avant HH:MM
 seconds_until() {
     local hhmm="$1"
-    local target_h target_m
-    target_h=$(echo "$hhmm" | cut -d: -f1)
-    target_m=$(echo "$hhmm" | cut -d: -f2)
-
     python3 - <<EOF
-import time
 from datetime import datetime, timedelta
-
 now = datetime.now()
-target = now.replace(hour=int("$target_h"), minute=int("$target_m"), second=0, microsecond=0)
+h, m = map(int, "$hhmm".split(":"))
+target = now.replace(hour=h, minute=m, second=0, microsecond=0)
 if target <= now:
     target += timedelta(days=1)
 print(int((target - now).total_seconds()))
@@ -143,14 +205,14 @@ EOF
 # Dispatch d'un event schedulé
 dispatch_event() {
     local event_type="$1"
-    log "📅  Event schedulé : $event_type"
+    local event_id="$2"    # "HH:MM-type" pour déduplication
+    log "📅  Event schedulé : $event_type (id=$event_id)"
 
     case "$event_type" in
         gen_podcast)
             generate_podcast &
             GEN_PID=$!
             wait_for_generation_with_music "gen_podcast"
-            log "✅  Prêt pour le prochain podcast"
             ;;
         run_podcast)
             if [[ -f "$PODCAST_WAV" && -f "$ANNOUNCE_WAV" ]]; then
@@ -165,7 +227,6 @@ dispatch_event() {
             generate_news &
             GEN_PID=$!
             wait_for_generation_with_music "gen_news"
-            log "✅  Prêt pour le prochain flash info"
             ;;
         run_news)
             if [[ -f "$NEWS_WAV" && -f "$WEATHER_WAV" ]]; then
@@ -180,6 +241,9 @@ dispatch_event() {
             log "WARN : event_type inconnu : $event_type"
             ;;
     esac
+
+    # Persiste l'ID après exécution réussie
+    write_last_event "$event_id"
 }
 
 # =============================================================================
@@ -221,10 +285,9 @@ write_status() {
         Annonce)  vttFile="/radio-gen/announce.vtt?t=$(date +%s)" ;;
         Podcast)  vttFile="/podcasts/podcast.vtt?t=$(date +%s)" ;;
         Météo)    vttFile="/radio-gen/weather.vtt?t=$(date +%s)" ;;
-        News)    vttFile="/radio-gen/news.vtt?t=$(date +%s)" ;;
+        News)     vttFile="/radio-gen/news.vtt?t=$(date +%s)" ;;
     esac
 
-    # Prochain event schedulé
     local next_event_info next_time next_type next_field
     next_event_info=$(get_next_event_time)
     if [[ -n "$next_event_info" ]]; then
@@ -235,8 +298,8 @@ write_status() {
         next_field="\"nextEvent\": null"
     fi
 
-    title=$(echo "$title"  | sed 's/"/\\"/g')
-    artist=$(echo "$artist" | sed 's/"/\\"/g')
+    title=$(echo "$title"  | sed 's/"/\\\\"/g')
+    artist=$(echo "$artist" | sed 's/"/\\\\"/g')
 
     cat > "$STATUS_JSON" <<EOF
 {
@@ -293,8 +356,8 @@ play_file() {
 
     [[ -z "$duration" ]] && duration=0
     [[ -z "$title"    ]] && title=$(basename "$file")
-    title=$(echo "$title"   | sed 's/"/\\"/g')
-    artist=$(echo "$artist" | sed 's/"/\\"/g')
+    title=$(echo "$title"   | sed 's/"/\\\\"/g')
+    artist=$(echo "$artist" | sed 's/"/\\\\"/g')
 
     local now_iso
     now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -423,7 +486,7 @@ play_forecast() {
     start_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
     (while true; do
-        write_status "Météo" "$start_iso" "Buletin Météo" "Radio DEV" "$duration"
+        write_status "Météo" "$start_iso" "Bulletin Météo" "Radio DEV" "$duration"
         sleep 1
     done) &
     STATUS_PID=$!
@@ -446,10 +509,11 @@ get_podcast() {
 
 generate_podcast() {
     log "⚙️  Génération du prochain podcast..."
-    bash "$PODCAST_GEN" --lang fr && \
+    nice -n 19 bash "$PODCAST_GEN" --lang fr && \
         log "⚙️  Génération terminée" || \
         log "WARN : podcast run.sh erreur"
     generate_announce "$(get_podcast)"
+    log "✅  Prêt pour le prochain podcast"
 }
 
 generate_announce() {
@@ -461,7 +525,7 @@ generate_announce() {
 }
 
 generate_forecast() {
-    log "⚙️  Génération bultin météo..."
+    log "⚙️  Génération bulletin météo..."
     local hour
     hour=$(date +%H)
     if (( 10#$hour >= 18 )); then
@@ -477,10 +541,11 @@ generate_forecast() {
 
 generate_news() {
     log "⚙️  Génération flash info..."
-    bash "$RADIO_GEN" "news" "https://www.france24.com/fr/rss" && \
+    nice -n 19 bash "$RADIO_GEN" "news" "https://www.france24.com/fr/rss" && \
         log "⚙️  Flash Info générée" || \
         log "WARN : news run.sh erreur"
     generate_forecast
+    log "✅  Prêt pour le prochain flash info"
 }
 
 wait_for_generation_with_music() {
@@ -489,20 +554,24 @@ wait_for_generation_with_music() {
 
     log "🎵  Musique pendant la génération..."
     while kill -0 "$GEN_PID" 2>/dev/null; do
-        # Vérifie si un NOUVEL event est imminent (lookahead 30s)
-        local upcoming
-        upcoming=$(get_upcoming_event 30)
-        
-        # Si un event arrive ET que ce n'est pas celui qu'on traite déjà
-        if [[ -n "$upcoming" && "$upcoming" != "$current_event" ]]; then
-            log "📅  NOUVEL event imminent ($upcoming) — on termine la génération actuelle"
-            wait "$GEN_PID" || true
-            GEN_PID=""
-            dispatch_event "$upcoming"
-            return
+        local upcoming_raw upcoming_hhmm upcoming_type upcoming_id
+        upcoming_raw=$(get_next_future_event 30)
+        if [[ -n "$upcoming_raw" ]]; then
+            upcoming_hhmm=$(echo "$upcoming_raw" | cut -d: -f1-2)
+            upcoming_type=$(echo "$upcoming_raw" | cut -d: -f3)
+            upcoming_id="${upcoming_hhmm}-${upcoming_type}"
+            local secs_left
+            secs_left=$(seconds_until "$upcoming_hhmm")
+
+            if [[ -n "$upcoming_type" && "$upcoming_type" != "$current_event" && "$secs_left" -le 30 ]]; then
+                log "📅  NOUVEL event imminent ($upcoming_type @ $upcoming_hhmm) — on attend la génération"
+                wait "$GEN_PID" || true
+                GEN_PID=""
+                dispatch_event "$upcoming_type" "$upcoming_id"
+                return
+            fi
         fi
-        
-        # Joue une piste. Si la piste finit, la boucle while check à nouveau GEN_PID
+
         play_next_track
     done
 
@@ -511,36 +580,57 @@ wait_for_generation_with_music() {
 }
 
 # =============================================================================
-# BOUCLE PRINCIPALE AVEC SCHEDULE
+# BOUCLE PRINCIPALE
 # =============================================================================
 
-LAST_EVENT_ID=""
+# File d'attente des events (globale, vidée après chaque dispatch)
+EVENT_QUEUE=()
+
+# Enfile un event s'il n'est pas déjà présent
+enqueue_event() {
+    local event_id="$1"   # "HH:MM-type"
+    for item in "${EVENT_QUEUE[@]}"; do
+        [[ "$item" == "$event_id" ]] && return 0
+    done
+    EVENT_QUEUE+=("$event_id")
+    log "📥  Enfilé : $event_id (file: ${#EVENT_QUEUE[@]})"
+}
+
+# Défile et joue tous les events en attente
+flush_event_queue() {
+    [[ ${#EVENT_QUEUE[@]} -eq 0 ]] && return 0
+    local item hhmm type
+    for item in "${EVENT_QUEUE[@]}"; do
+        hhmm=$(echo "$item" | cut -d- -f1)
+        type=$(echo "$item" | cut -d- -f2-)
+        log "📤  Dépile et déclenche : $type @ $hhmm"
+        dispatch_event "$type" "$item"
+    done
+    EVENT_QUEUE=()
+}
 
 main_loop() {
     log "🗓️  Démarrage boucle principale"
 
     while true; do
-        # 1. Jouer la musique (attend la fin du morceau)
+        # 1. Vider la file avant chaque track
+        flush_event_queue
+
+        # 2. Jouer un morceau (sans l'interrompre)
         play_next_track
 
-        # 2. Vérifier le planning
-        local schedule_info
-        schedule_info=$(get_next_event_time)
-        
-        local mode=$(echo "$schedule_info" | cut -d: -f1)
-        local event_time=$(echo "$schedule_info" | cut -d: -f2-3)
-        local event_type=$(echo "$schedule_info" | cut -d: -f4)
-
-        if [[ "$mode" == "TRIGGER" ]]; then
-            # On vérifie si cet événement précis (heure+type) a déjà été fait
-            if [[ "$LAST_EVENT_ID" != "$event_time-$event_type" ]]; then
-                log "⏰ HEURE DÉPASSÉE ($event_time) : Lancement de $event_type"
-                dispatch_event "$event_type"
-                LAST_EVENT_ID="$event_time-$event_type"
-            fi
+        # 3. Après la track, chercher les events dus (fenêtre 15 min)
+        #    15 min > durée max d'une track → on ne rate jamais un event
+        local due_raw due_hhmm due_type due_id
+        due_raw=$(get_due_event 900)
+        if [[ -n "$due_raw" ]]; then
+            due_hhmm=$(echo "$due_raw" | cut -d: -f1-2)
+            due_type=$(echo "$due_raw" | cut -d: -f3)
+            due_id="${due_hhmm}-${due_type}"
+            enqueue_event "$due_id"
         fi
 
-        # 3. Nettoyage rapide des processus de génération en arrière-plan
+        # 4. Nettoyage des processus de génération terminés
         if [[ -n "${GEN_PID:-}" ]] && ! kill -0 "$GEN_PID" 2>/dev/null; then
             wait "$GEN_PID" || true
             GEN_PID=""
@@ -548,24 +638,50 @@ main_loop() {
     done
 }
 
-# Retourne la durée de la prochaine track sans la jouer
-get_next_track_duration() {
-    local playlist_dir
-    playlist_dir="$(dirname "$(realpath "$PLAYLIST")")"
-    local i=0
-    while IFS= read -r line; do
-        [[ "$line" =~ ^# || -z "$line" ]] && continue
-        if [[ $i -eq $PLAYLIST_POS ]]; then
-            local track="$line"
-            [[ "$track" = /* ]] || track="$playlist_dir/$line"
-            if [[ -f "$track" ]]; then
-                ffprobe -v error -show_entries format=duration \
-                        -of default=noprint_wrappers=1:nokey=1 "$track" 2>/dev/null || echo ""
-            fi
+# =============================================================================
+# DÉMARRAGE : rattrapage des events manqués
+# =============================================================================
+
+handle_startup_events() {
+    log "🔍  Vérification des events manqués au démarrage..."
+
+    # Vérifier si le prochain event est dans moins de 10 min → skip tout rattrapage
+    local next_raw next_hhmm secs_to_next
+    next_raw=$(get_next_future_event 0)
+    if [[ -n "$next_raw" ]]; then
+        next_hhmm=$(echo "$next_raw" | cut -d: -f1-2)
+        secs_to_next=$(seconds_until "$next_hhmm")
+        if [[ "$secs_to_next" -le 600 ]]; then
+            log "⏭️  Rattrapage ignoré : prochain event dans ${secs_to_next}s (< 10 min)"
             return
         fi
-        (( i++ )) || true
-    done < "$PLAYLIST"
+    fi
+
+    local missed
+    missed=$(get_missed_events)
+
+    if [[ -z "$missed" ]]; then
+        log "✅  Aucun event manqué."
+        return
+    fi
+
+    local last_missed_hhmm last_missed_type last_missed_id
+    local last_line
+    last_line=$(echo "$missed" | tail -n1)
+    last_missed_hhmm=$(echo "$last_line" | cut -d: -f1-2)
+    last_missed_type=$(echo "$last_line" | cut -d: -f3)
+    last_missed_id="${last_missed_hhmm}-${last_missed_type}"
+
+    case "$last_missed_type" in
+        gen_*)
+            log "⚙️  Rattrapage : relance de $last_missed_type (manqué à $last_missed_hhmm)"
+            dispatch_event "$last_missed_type" "$last_missed_id"
+            ;;
+        *)
+            log "⏭️  Rattrapage ignoré : ($last_missed_type)"
+            write_last_event "$last_missed_id"
+            ;;
+    esac
 }
 
 # =============================================================================
@@ -590,18 +706,20 @@ main() {
 
     cd "$SCRIPT_DIR"
 
-    [[ -f $PODCAST_WAV ]] && { rm -f $PODCAST_WAV; }
-    [[ -f $ANNOUNCE_WAV ]] && { rm -f $ANNOUNCE_WAV; }
-    [[ -f $NEWS_WAV ]] && { rm -f $NEWS_WAV; }
-    [[ -f $WEATHER_WAV ]] && { rm -f $WEATHER_WAV; }
+    [[ -f $LAST_EVENT_FILE ]] && { rm -f "$LAST_EVENT_FILE"; }
+    [[ -f $PODCAST_WAV ]]     && { rm -f "$PODCAST_WAV"; }
+    [[ -f $ANNOUNCE_WAV ]]    && { rm -f "$ANNOUNCE_WAV"; }
+    [[ -f $NEWS_WAV ]]        && { rm -f "$NEWS_WAV"; }
+    [[ -f $WEATHER_WAV ]]     && { rm -f "$WEATHER_WAV"; }
 
     echo "#EXTM3U" > "playlist.m3u"
     find "./music" -type f -name "*.mp3" -print0 \
       | shuf -z \
       | while IFS= read -r -d '' file; do echo "$file" >> "playlist.m3u"; done
 
-    [[ -f "$PLAYLIST"    ]] || { log "ERREUR : $PLAYLIST introuvable";   exit 1; }
+    [[ -f "$PLAYLIST"    ]] || { log "ERREUR : $PLAYLIST introuvable";    exit 1; }
     [[ -f "$PODCAST_GEN" ]] || { log "ERREUR : $PODCAST_GEN introuvable"; exit 1; }
+    [[ -f "$RADIO_GEN"   ]] || { log "ERREUR : $RADIO_GEN introuvable";   exit 1; }
 
     log "⏳  Attente d'Icecast sur ${ICECAST_HOST}:${ICECAST_PORT}..."
     for i in $(seq 1 30); do
@@ -617,6 +735,8 @@ main() {
 
     start_ffmpeg_streamer
     sleep 4
+
+    handle_startup_events
 
     main_loop
 }
