@@ -54,7 +54,13 @@ services:
       - ollama_data:/root/.ollama
     networks:
       - radio-net
-    entrypoint: /bin/sh -c "ollama serve & sleep 5 && ollama pull gemma3 && wait"
+    entrypoint: /bin/sh -c "ollama serve &
+      until ollama list > /dev/null 2>&1; do
+        echo 'Waiting for Ollama...';
+        sleep 2;
+      done &&
+      ollama pull gemma3 &&
+      wait"
 
 networks:
   radio-net:
