@@ -152,12 +152,11 @@ if events:
 " 2>/dev/null || true
 }
 
-# Retourne l'event qui DOIT être joué maintenant :
-# = heure passée depuis <= window_sec ET pas encore joué
+# Retourne le premier event passé non encore joué,
+# en se basant sur le dernier event persisté dans LAST_EVENT_FILE.
+# Pas de fenêtre temporelle arbitraire.
 # Format stdout : "HH:MM:type" — vide sinon
-# Usage: get_due_event [window_sec=300]
-get_due_event() {
-    local window="${1:-300}"
+get_pending_event() {
     local last_id
     last_id=$(read_last_event)
     [[ -f "$SCHEDULE_JSON" ]] || return 0
@@ -169,7 +168,6 @@ with open('$SCHEDULE_JSON') as f:
 
 now = datetime.datetime.now()
 now_min = now.hour * 60 + now.minute + now.second / 60
-window_min = $window / 60.0
 last_id = '$last_id'
 
 events = []
@@ -180,9 +178,18 @@ for time_str, etype in schedule.items():
     events.append((h * 60 + m, f'{h:02d}:{m:02d}', etype))
 events.sort()
 
-for total, hhmm, etype in events:
-    event_id = f'{hhmm}-{etype}'
-    if (now_min - window_min) <= total <= (now_min + 1) and event_id != last_id:
+# Position du dernier event joué
+last_idx = -1
+for i, (total, hhmm, etype) in enumerate(events):
+    if f'{hhmm}-{etype}' == last_id:
+        last_idx = i
+        break
+
+# Premier event passé après last_idx
+for i, (total, hhmm, etype) in enumerate(events):
+    if i <= last_idx:
+        continue
+    if total <= now_min:
         print(f'{hhmm}:{etype}')
         sys.exit(0)
 " 2>/dev/null || true
@@ -619,10 +626,9 @@ main_loop() {
         # 2. Jouer un morceau (sans l'interrompre)
         play_next_track
 
-        # 3. Après la track, chercher les events dus (fenêtre 15 min)
-        #    15 min > durée max d'une track → on ne rate jamais un event
+        # 3. Après la track, chercher les events passés non encore joués
         local due_raw due_hhmm due_type due_id
-        due_raw=$(get_due_event 900)
+        due_raw=$(get_pending_event)
         if [[ -n "$due_raw" ]]; then
             due_hhmm=$(echo "$due_raw" | cut -d: -f1-2)
             due_type=$(echo "$due_raw" | cut -d: -f3)
