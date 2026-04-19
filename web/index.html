@@ -549,7 +549,13 @@ async function fetchMetadata() {
             const uiDelay = browserBuffer * 1000;
 
             setTimeout(async () => {
-                pendingTrackChange = false; // libère pour le prochain changement
+                pendingTrackChange = false;
+                
+                // ✅ Vider immédiatement les sous-titres de l'ancienne track
+                subDiv.innerHTML = "";
+                cuesIndex = [];
+                hasSubtitles = false;  // ← force l'état "pas de sous-titres" jusqu'au chargement du nouveau VTT
+                
                 const isNewShow = data.event !== displayedPodcastData?.event;
                 if (isNewShow && (audio.paused || audio.ended)) {
                     audio.src = '/icecast/radio?t=' + Date.now();
@@ -559,13 +565,11 @@ async function fetchMetadata() {
                 anchorAudioTime = 0;
 
                 if (data.vtt) {
-                    hasSubtitles = true;
                     const vttRes = await fetch(data.vtt);
                     cuesIndex = parseVTT(await vttRes.text());
-                } else {
-                    hasSubtitles = false;
-                    cuesIndex = [];
+                    hasSubtitles = true;  // ← on active les sous-titres seulement après chargement réussi
                 }
+                // (si pas de vtt, hasSubtitles reste false, cuesIndex reste vide ✅)
             }, uiDelay);
         } else if(!data.vtt) {
             hasSubtitles = false;
