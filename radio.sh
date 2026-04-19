@@ -109,7 +109,7 @@ for total, hhmm, etype in events:
         break
     event_id = f'{hhmm}-{etype}'
     if last_id == '':
-        sys.exit(0)
+        missed = [(hhmm, etype)]
     elif event_id == last_id:
         missed = []
     else:
@@ -169,7 +169,8 @@ with open('$SCHEDULE_JSON') as f:
 now = datetime.datetime.now()
 now_min = now.hour * 60 + now.minute + now.second / 60
 last_id = '$last_id'
-
+if last_id == '':
+    sys.exit(0)
 events = []
 for time_str, etype in schedule.items():
     parts = time_str.strip().split(':')
@@ -712,7 +713,6 @@ main() {
 
     cd "$SCRIPT_DIR"
 
-    [[ -f $LAST_EVENT_FILE ]] && { rm -f "$LAST_EVENT_FILE"; }
     [[ -f $PODCAST_WAV ]]     && { rm -f "$PODCAST_WAV"; }
     [[ -f $ANNOUNCE_WAV ]]    && { rm -f "$ANNOUNCE_WAV"; }
     [[ -f $NEWS_WAV ]]        && { rm -f "$NEWS_WAV"; }
