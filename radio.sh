@@ -718,6 +718,7 @@ main() {
     [[ -f $NEWS_WAV ]]        && { rm -f "$NEWS_WAV"; }
     [[ -f $WEATHER_WAV ]]     && { rm -f "$WEATHER_WAV"; }
 
+    mkdir -p "music"
     echo "#EXTM3U" > "playlist.m3u"
     find "./music" -type f -name "*.mp3" -print0 \
       | shuf -z \
