@@ -221,16 +221,9 @@ dispatch_event() {
             GEN_PID=$!
             wait_for_generation_with_music "gen_podcast"
             ;;
-        run_announce)
-            if [[ -f "$ANNOUNCE_WAV" ]]; then
-                play_announce
-                write_status "Musique" "" "" "" "0"
-            else
-                log "WARN : fichiers manquants, diffusion ignorée"
-            fi
-            ;;
         run_podcast)
-            if [[ -f "$PODCAST_WAV" ]]; then
+            if [[ -f "$PODCAST_WAV" && -f "$ANNOUNCE_WAV" ]]; then
+                play_announce
                 play_podcast
                 write_status "Musique" "" "" "" "0"
             else
