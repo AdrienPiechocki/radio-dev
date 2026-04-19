@@ -287,6 +287,94 @@
                 min-height: 2.5em;
             }
         }
+
+        .schedule-container {
+            margin-top: 25px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            position: relative;
+        }
+
+        .schedule-container h2 {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .timeline-single-row {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .row {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+        }
+
+        .row div {
+            flex: 1;
+            text-align: center;
+            transition: all 0.3s ease;
+            opacity: 0.4;
+            cursor: help;
+            padding: 5px 0;
+        }
+
+        /* État Focus (Actuel) et Hover */
+        .row div.focus, .row div:hover {
+            opacity: 1;
+            transform: scale(1.15);
+            color: var(--secondary);
+        }
+
+        .events { font-size: 1.1rem; }
+        .hours { font-size: 0.75rem; font-family: monospace; color: var(--text-dim); }
+
+        .timeline-line {
+            height: 1px;
+            width: 100%;
+            background: rgba(255,255,255,0.1);
+            margin: 8px 0;
+            position: relative;
+        }
+
+        .timeline-line::after {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 18%;
+            height: 5px;
+            background: var(--accent);
+            border-radius: 4px;
+            box-shadow: 0 0 10px var(--accent);
+        }
+
+        .timeline-tooltip {
+            position: absolute;
+            /* On retire le left: 50% et le transform fixe */
+            bottom: 100%; /* S'affiche au-dessus de la ligne */
+            margin-bottom: 10px;
+            background: var(--card-bg);
+            border: 1px solid var(--accent);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            color: var(--text-main);
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease, transform 0.2s ease; /* Ajout d'une transition sur le mouvement */
+            z-index: 100;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        .timeline-tooltip.visible { opacity: 1; }
     </style>
 </head>
 <body>
@@ -328,6 +416,14 @@
     </div>
 
     <div id="subtitles"></div>
+    <div class="schedule-container">
+        <h2>Programme</h2>
+        <div class="timeline-wrapper">
+            <div id="zoom-timeline" class="timeline-single-row">
+                </div>
+            <div id="timeline-tooltip" class="timeline-tooltip"></div>
+        </div>
+    </div>
     <div id="debug"></div>
 </div>
 <script>
@@ -561,6 +657,79 @@ async function start() {
 
 setInterval(fetchMetadata, 1000);
 start();
+
+const fullSchedule = [
+    {h: 2,  t: "🎙️", desc: "Podcast"},
+    {h: 6,  t: "🎙️", desc: "Podcast"},
+    {h: 9,  t: "📰", desc: "News"},
+    {h: 10, t: "🎙️", desc: "Podcast"},
+    {h: 12, t: "🎙️", desc: "Podcast"},
+    {h: 13, t: "📰", desc: "News"},
+    {h: 14, t: "🎙️", desc: "Podcast"},
+    {h: 16, t: "🎙️", desc: "Podcast"},
+    {h: 18, t: "🎙️", desc: "Podcast"},
+    {h: 20, t: "📰", desc: "News"},
+    {h: 21, t: "🎙️", desc: "Podcast"},
+    {h: 23, t: "🎙️", desc: "Podcast"}
+];
+
+function updateZoomTimeline() {
+    const now = new Date().getHours();
+    
+    // Trouver l'index le plus proche
+    let currentIndex = fullSchedule.findIndex(s => s.h >= now);
+    if (currentIndex === -1) currentIndex = fullSchedule.length - 1;
+
+    // Extraire les 5 éléments avec boucle (modulo)
+    const selection = [];
+    for (let i = -2; i <= 2; i++) {
+        let idx = (currentIndex + i + fullSchedule.length) % fullSchedule.length;
+        selection.push({ ...fullSchedule[idx], isFocus: i === 0 });
+    }
+
+    const container = document.getElementById('zoom-timeline');
+    container.innerHTML = `
+        <div class="row events">
+            ${selection.map(s => `<div class="${s.isFocus ? 'focus' : ''}" data-desc="${s.desc}">${s.t}</div>`).join('')}
+        </div>
+        <div class="timeline-line"></div>
+        <div class="row hours">
+            ${selection.map(s => `<div class="${s.isFocus ? 'focus' : ''}" data-desc="${s.desc}">${s.h}h</div>`).join('')}
+        </div>
+    `;
+
+    // Gestion du Hover avec positionnement dynamique
+    const cells = container.querySelectorAll('.row div');
+    const tooltip = document.getElementById('timeline-tooltip');
+
+    cells.forEach(cell => {
+        cell.addEventListener('mouseenter', (e) => {
+            const text = e.target.getAttribute('data-desc');
+            if (!text) return;
+
+            tooltip.textContent = text;
+            
+            // Calcul de la position
+            const cellRect = e.target.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            
+            // Calcul du centre horizontal de la cellule par rapport au conteneur
+            const leftPosition = (cellRect.left - containerRect.left) + (cellRect.width / 2);
+            
+            tooltip.style.left = `${leftPosition}px`;
+            tooltip.style.transform = `translateX(-50%)`; // Centre le tooltip sur le point calculé
+            tooltip.classList.add('visible');
+        });
+
+        cell.addEventListener('mouseleave', () => {
+            tooltip.classList.remove('visible');
+        });
+    });
+}
+
+// Init
+updateZoomTimeline();
+setInterval(updateZoomTimeline, 60000);
 </script>
 </body>
 </html>
