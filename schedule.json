@@ -1,7 +1,7 @@
 {
-  "1:30": "gen_podcast",
+  "01:30": "gen_podcast",
   "02:00": "run_podcast",
-  "5:30": "gen_podcast",
+  "05:30": "gen_podcast",
   "06:00": "run_podcast",
   "08:30": "gen_news",
   "09:00": "run_news",
