@@ -719,6 +719,7 @@ main() {
     [[ -f $WEATHER_WAV ]]     && { rm -f "$WEATHER_WAV"; }
 
     mkdir -p "music"
+    [[ -z "$(ls -A ./music)" ]] && { log "ERREUR: ajoutez de la musique au dossier ./music"; exit 1; }
     echo "#EXTM3U" > "playlist.m3u"
     find "./music" -type f -name "*.mp3" -print0 \
       | shuf -z \
