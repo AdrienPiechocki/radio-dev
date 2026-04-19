@@ -12,6 +12,7 @@ cd "$SCRIPT_DIR"
 PLAYLIST_POS=0
 
 STATUS_JSON="./status.json"
+COVER_ART="./web/cover.jpg"
 SCHEDULE_JSON="./schedule.json"
 LAST_EVENT_FILE="./.last_event"          # ← persiste entre redémarrages
 
@@ -377,18 +378,26 @@ play_file() {
     local file="$1"
 
     local info duration title artist album
-    info=$(ffprobe -v error -show_entries format=duration:format_tags=title,artist,album \
-           -of default=noprint_wrappers=1:nokey=1 "$file")
-    duration=$(echo "$info" | sed -n '1p')
-    title=$(echo "$info"    | sed -n '2p')
-    artist=$(echo "$info"   | sed -n '3p')
-    album=$(echo "$info"    | sed -n '4p')
+    duration=$(ffprobe -v error -show_entries format=duration \
+               -of default=noprint_wrappers=1:nokey=1 "$file")
+    title=$(ffprobe -v error -show_entries format_tags=title \
+            -of default=noprint_wrappers=1:nokey=1 "$file")
+    artist=$(ffprobe -v error -show_entries format_tags=artist \
+             -of default=noprint_wrappers=1:nokey=1 "$file")
+    album=$(ffprobe -v error -show_entries format_tags=album \
+            -of default=noprint_wrappers=1:nokey=1 "$file")
 
     [[ -z "$duration" ]] && duration=0
     [[ -z "$title"    ]] && title=$(basename "$file")
-    title=$(echo "$title"   | sed 's/"/\\\\"/g')
-    artist=$(echo "$artist" | sed 's/"/\\\\"/g')
-    album=$(echo "$album"   | sed 's/"/\\\\"/g')
+    title=$(echo "$title"   | sed 's/"/\\"/g')
+    artist=$(echo "$artist" | sed 's/"/\\"/g')
+    album=$(echo "$album"   | sed 's/"/\\"/g')
+
+    # Extraire la pochette
+    rm -f $COVER_ART
+    touch $COVER_ART
+    ffmpeg -hide_banner -nostdin -i "$file" \
+        -map 0:v:0 -c copy -update 1 $COVER_ART -y -loglevel quiet 2>/dev/null || true
 
     local now_iso
     now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
