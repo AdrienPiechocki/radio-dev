@@ -43,7 +43,7 @@ log() { echo "[$(date '+%H:%M:%S %Z')] $*"; }
 
 # Lit/écrit l'ID du dernier event exécuté (persiste au redémarrage)
 read_last_event()  { [[ -f "$LAST_EVENT_FILE" ]] && cat "$LAST_EVENT_FILE" || echo ""; }
-write_last_event() { echo "$1" > "$LAST_EVENT_FILE"; }
+write_last_event() { echo "$(date '+%Y-%m-%d %H:%M')-${1}" > "$LAST_EVENT_FILE"; }
 
 # Retourne le prochain event FUTUR (heure > maintenant + grace_sec)
 # Format stdout : "HH:MM:type"  — vide si schedule absent
@@ -86,34 +86,46 @@ get_missed_events() {
     last_id=$(read_last_event)
     [[ -f "$SCHEDULE_JSON" ]] || return 0
     python3 -c "
-import json, datetime, sys
+import json, datetime, sys, re
 
 with open('$SCHEDULE_JSON') as f:
     schedule = json.load(f)
 
 now = datetime.datetime.now()
 now_min = now.hour * 60 + now.minute + now.second / 60
-last_id = '$last_id'
+today = now.strftime('%Y-%m-%d')
+raw = '$last_id'
+
+m = re.match(r'^(\d{4}-\d{2}-\d{2}) \d{2}:\d{2}-(.+)$', raw)
+last_date = m.group(1) if m else ''
+last_id   = m.group(2) if m else ''
 
 events = []
 for time_str, etype in schedule.items():
     parts = time_str.strip().split(':')
     if len(parts) != 2: continue
-    h, m = int(parts[0]), int(parts[1])
-    events.append((h * 60 + m, f'{h:02d}:{m:02d}', etype))
+    h, m2 = int(parts[0]), int(parts[1])
+    events.append((h * 60 + m2, f'{h:02d}:{m2:02d}', etype))
 events.sort()
 
-missed = []
-for total, hhmm, etype in events:
-    if total > now_min:
-        break
-    event_id = f'{hhmm}-{etype}'
-    if last_id == '':
-        missed = [(hhmm, etype)]
-    elif event_id == last_id:
-        missed = []
-    else:
-        missed.append((hhmm, etype))
+if last_date < today:
+    # Redémarrage le lendemain (ou plus) : tous les events passés aujourd'hui sont manqués
+    missed = [(hhmm, etype) for total, hhmm, etype in events if total <= now_min]
+elif last_id == '':
+    # Aucun historique : seulement le dernier event passé
+    missed = [(hhmm, etype) for total, hhmm, etype in events if total <= now_min][-1:]
+else:
+    # Même jour : events passés après le dernier joué
+    missed = []
+    found = False
+    for total, hhmm, etype in events:
+        if total > now_min:
+            break
+        if f'{hhmm}-{etype}' == last_id:
+            found = True
+            missed = []
+        elif found:
+            missed.append((hhmm, etype))
 
 for hhmm, etype in missed:
     print(f'{hhmm}:{etype}')
@@ -161,32 +173,38 @@ get_pending_event() {
     last_id=$(read_last_event)
     [[ -f "$SCHEDULE_JSON" ]] || return 0
     python3 -c "
-import json, datetime, sys
+import json, datetime, sys, re
 
 with open('$SCHEDULE_JSON') as f:
     schedule = json.load(f)
 
 now = datetime.datetime.now()
 now_min = now.hour * 60 + now.minute + now.second / 60
-last_id = '$last_id'
-if last_id == '':
+today = now.strftime('%Y-%m-%d')
+raw = '$last_id'
+
+m = re.match(r'^(\d{4}-\d{2}-\d{2}) \d{2}:\d{2}-(.+)$', raw)
+last_date = m.group(1) if m else ''
+last_id   = m.group(2) if m else ''
+
+# Si pas d'historique ou redémarrage le lendemain : get_missed_events s'en charge
+if last_id == '' or last_date < today:
     sys.exit(0)
+
 events = []
 for time_str, etype in schedule.items():
     parts = time_str.strip().split(':')
     if len(parts) != 2: continue
-    h, m = int(parts[0]), int(parts[1])
-    events.append((h * 60 + m, f'{h:02d}:{m:02d}', etype))
+    h, m2 = int(parts[0]), int(parts[1])
+    events.append((h * 60 + m2, f'{h:02d}:{m2:02d}', etype))
 events.sort()
 
-# Position du dernier event joué
 last_idx = -1
 for i, (total, hhmm, etype) in enumerate(events):
     if f'{hhmm}-{etype}' == last_id:
         last_idx = i
         break
 
-# Premier event passé après last_idx
 for i, (total, hhmm, etype) in enumerate(events):
     if i <= last_idx:
         continue
