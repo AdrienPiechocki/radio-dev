@@ -671,26 +671,35 @@ setInterval(fetchMetadata, 1000);
 start();
 
 const fullSchedule = [
-    {h: 2,  t: "🎙️", desc: "Podcast"},
-    {h: 6,  t: "🎙️", desc: "Podcast"},
+    {h: 2,  t: "🎙️", desc: "Chronique"},
+    {h: 6,  t: "🎙️", desc: "Chronique"},
     {h: 9,  t: "📰", desc: "News"},
-    {h: 10, t: "🎙️", desc: "Podcast"},
-    {h: 12, t: "🎙️", desc: "Podcast"},
+    {h: 10, t: "🎙️", desc: "Chronique"},
+    {h: 12, t: "🎙️", desc: "Chronique"},
     {h: 13, t: "📰", desc: "News"},
-    {h: 14, t: "🎙️", desc: "Podcast"},
-    {h: 16, t: "🎙️", desc: "Podcast"},
-    {h: 18, t: "🎙️", desc: "Podcast"},
+    {h: 14, t: "🎙️", desc: "Chronique"},
+    {h: 16, t: "🎙️", desc: "Chronique"},
+    {h: 18, t: "🎙️", desc: "Chronique"},
     {h: 20, t: "📰", desc: "News"},
-    {h: 21, t: "🎙️", desc: "Podcast"},
-    {h: 23, t: "🎙️", desc: "Podcast"}
+    {h: 21, t: "🎙️", desc: "Chronique"},
+    {h: 23, t: "🎙️", desc: "Chronique"}
 ];
 
 function updateZoomTimeline() {
-    const now = new Date().getHours();
-    
-    // Trouver l'index le plus proche
-    let currentIndex = fullSchedule.findIndex(s => s.h >= now);
-    if (currentIndex === -1) currentIndex = fullSchedule.length - 1;
+    const now = new Date();
+    const currentH = now.getHours();
+    const currentM = now.getMinutes();
+
+    // On cherche l'événement actif : 
+    // Si l'heure est passée de plus de 15 min, on passe au suivant.
+    let currentIndex = fullSchedule.findIndex(s => {
+        if (s.h > currentH) return true; // Événement futur
+        if (s.h === currentH && currentM < 15) return true; // Événement en cours (- de 15min)
+        return false;
+    });
+
+    // Si on est en fin de journée (ex: 23h20), on boucle sur le premier élément (02h)
+    if (currentIndex === -1) currentIndex = 0;
 
     // Extraire les 5 éléments avec boucle (modulo)
     const selection = [];
