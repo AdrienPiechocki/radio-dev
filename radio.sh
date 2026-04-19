@@ -109,7 +109,7 @@ for total, hhmm, etype in events:
         break
     event_id = f'{hhmm}-{etype}'
     if last_id == '':
-        missed = [(hhmm, etype)]
+        sys.exit(0)
     elif event_id == last_id:
         missed = []
     else:
