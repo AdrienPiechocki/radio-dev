@@ -26,7 +26,7 @@ visit this URL : http://localhost:8080/
 
 Q: No music ??
 
-A: You must put your own .mp3 files in the music subfolder (create it first)
+A: You must put your own .mp3 files in the music subfolder
 
 Q: generator not working
 
