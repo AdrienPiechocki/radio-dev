@@ -555,7 +555,7 @@ generate_forecast() {
 
 generate_news() {
     log "⚙️  Génération flash info..."
-    nice -n 19 bash "$RADIO_GEN" "news" "https://www.france24.com/fr/rss" && \
+    nice -n 19 bash "$RADIO_GEN" "news" "https://www.france24.com/fr/rss https://www.france24.com/fr/france/rss https://www.france24.com/fr/europe/rss" && \
         log "⚙️  Flash Info générée" || \
         log "WARN : news run.sh erreur"
     generate_forecast
