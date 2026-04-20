@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# radio.sh — avec scheduling depuis schedule.json
+# radio.sh — FIFO permanent vers Icecast, écriture non-bloquante via fd dédié
 # =============================================================================
 
 set -euo pipefail
@@ -14,7 +14,7 @@ PLAYLIST_POS=0
 STATUS_JSON="./status.json"
 COVER_ART="./web/cover.jpg"
 SCHEDULE_JSON="./schedule.json"
-LAST_EVENT_FILE="./.last_event"          # ← persiste entre redémarrages
+LAST_EVENT_FILE="./.last_event"
 
 PODCAST_WAV="./podcast-generator/podcast.wav"
 PODCAST_GEN="./podcast-generator/run.sh"
@@ -31,36 +31,81 @@ ICECAST_SOURCE_PASSWORD="${ICECAST_SOURCE_PASSWORD:-hackme}"
 ICECAST_MOUNT="${ICECAST_MOUNT:-/radio}"
 
 GEN_PID=""
-MUSIC_PID=""
-TIMER_PID=""
 FFMPEG_PID=""
 FIFO="/tmp/radio_pipe"
+# fd 3 est ouvert en écriture sur le FIFO — maintenu ouvert en permanence
+# pour éviter que le streamer ffmpeg reçoive EOF entre deux morceaux.
+FIFO_FD=3
 
 log() { echo "[$(date '+%H:%M:%S %Z')] $*"; }
+
+# =============================================================================
+# FIFO / STREAMER
+# =============================================================================
+
+start_streamer() {
+    rm -f "$FIFO"
+    mkfifo "$FIFO"
+
+    # Ouvre le fd 3 en écriture sur le FIFO (non-bloquant côté open grâce au
+    # fait que ffmpeg ouvre le FIFO en lecture juste après).
+    # On lance ffmpeg d'abord en arrière-plan, puis on ouvre le fd.
+    ffmpeg \
+        -hide_banner -nostdin \
+        -re \
+        -f s16le -ar 44100 -ac 2 \
+        -i "$FIFO" \
+        -codec:a libmp3lame -b:a 128k -ar 44100 \
+        -ice_name "Radio Locale" \
+        -ice_description "Ma radio IA" \
+        -content_type audio/mpeg \
+        -f mp3 \
+        "icecast://source:${ICECAST_SOURCE_PASSWORD}@${ICECAST_HOST}:${ICECAST_PORT}${ICECAST_MOUNT}" \
+        -loglevel warning &
+    FFMPEG_PID=$!
+
+    # Ouvre fd 3 en écriture — bloque jusqu'à ce que ffmpeg ouvre le FIFO en lecture
+    exec 3>"$FIFO"
+    log "🔌  Streamer démarré (PID $FFMPEG_PID)"
+}
+
+check_streamer() {
+    if [[ -n "${FFMPEG_PID:-}" ]] && ! kill -0 "$FFMPEG_PID" 2>/dev/null; then
+        log "⚠️  Streamer mort, redémarrage..."
+        exec 3>&-   # ferme l'ancien fd
+        start_streamer
+    fi
+}
+
+# Envoie un fichier audio dans le FIFO via fd 3
+# ffmpeg décode en PCM s16le 44100 stéréo et écrit dans le fd ouvert
+stream_to_fifo() {
+    local file="$1"
+    ffmpeg -hide_banner -nostdin \
+        -i "$file" \
+        -map 0:a:0 \
+        -f s16le -ar 44100 -ac 2 \
+        -loglevel warning \
+        - >&3
+}
 
 # =============================================================================
 # SCHEDULING
 # =============================================================================
 
-# Lit/écrit l'ID du dernier event exécuté (persiste au redémarrage)
 read_last_event()  { [[ -f "$LAST_EVENT_FILE" ]] && cat "$LAST_EVENT_FILE" || echo ""; }
 write_last_event() { echo "$(date '+%Y-%m-%d %H:%M')-${1}" > "$LAST_EVENT_FILE"; }
 
-# Retourne le prochain event FUTUR (heure > maintenant + grace_sec)
-# Format stdout : "HH:MM:type"  — vide si schedule absent
 get_next_future_event() {
     local grace="${1:-0}"
     [[ -f "$SCHEDULE_JSON" ]] || return 0
     python3 -c "
 import json, datetime, sys
-
 with open('$SCHEDULE_JSON') as f:
     schedule = json.load(f)
-
 now = datetime.datetime.now()
 now_min = now.hour * 60 + now.minute + now.second / 60
 grace_min = $grace / 60.0
-
 events = []
 for time_str, etype in schedule.items():
     parts = time_str.strip().split(':')
@@ -68,39 +113,31 @@ for time_str, etype in schedule.items():
     h, m = int(parts[0]), int(parts[1])
     events.append((h * 60 + m, f'{h:02d}:{m:02d}', etype))
 events.sort()
-
 for total, hhmm, etype in events:
     if total > now_min + grace_min:
         print(f'{hhmm}:{etype}')
         sys.exit(0)
-
 if events:
     _, hhmm, etype = events[0]
     print(f'{hhmm}:{etype}')
 " 2>/dev/null || true
 }
 
-# Retourne les events passés non encore joués depuis le dernier redémarrage
-# Format stdout : une ligne "HH:MM:type" par event manqué, ordre chronologique
 get_missed_events() {
     local last_id
     last_id=$(read_last_event)
     [[ -f "$SCHEDULE_JSON" ]] || return 0
     python3 -c "
 import json, datetime, sys, re
-
 with open('$SCHEDULE_JSON') as f:
     schedule = json.load(f)
-
 now = datetime.datetime.now()
 now_min = now.hour * 60 + now.minute + now.second / 60
 today = now.strftime('%Y-%m-%d')
 raw = '$last_id'
-
 m = re.match(r'^(\d{4}-\d{2}-\d{2}) \d{2}:\d{2}-(.+)$', raw)
 last_date = m.group(1) if m else ''
 last_id   = m.group(2) if m else ''
-
 events = []
 for time_str, etype in schedule.items():
     parts = time_str.strip().split(':')
@@ -108,15 +145,11 @@ for time_str, etype in schedule.items():
     h, m2 = int(parts[0]), int(parts[1])
     events.append((h * 60 + m2, f'{h:02d}:{m2:02d}', etype))
 events.sort()
-
 if last_date < today:
-    # Redémarrage le lendemain (ou plus) : tous les events passés aujourd'hui sont manqués
     missed = [(hhmm, etype) for total, hhmm, etype in events if total <= now_min]
 elif last_id == '':
-    # Aucun historique : seulement le dernier event passé
     missed = [(hhmm, etype) for total, hhmm, etype in events if total <= now_min][-1:]
 else:
-    # Même jour : events passés après le dernier joué
     missed = []
     found = False
     for total, hhmm, etype in events:
@@ -127,25 +160,19 @@ else:
             missed = []
         elif found:
             missed.append((hhmm, etype))
-
 for hhmm, etype in missed:
     print(f'{hhmm}:{etype}')
 " 2>/dev/null || true
 }
 
-# Retourne le prochain event à venir (pour le status JSON)
-# Format stdout : "WAIT:HH:MM:type"
 get_next_event_time() {
     [[ -f "$SCHEDULE_JSON" ]] || return 0
     python3 -c "
 import json, datetime, sys
-
 with open('$SCHEDULE_JSON') as f:
     schedule = json.load(f)
-
 now = datetime.datetime.now()
 now_min = now.hour * 60 + now.minute + now.second / 60
-
 events = []
 for time_str, etype in schedule.items():
     parts = time_str.strip().split(':')
@@ -153,45 +180,33 @@ for time_str, etype in schedule.items():
     h, m = int(parts[0]), int(parts[1])
     events.append((h * 60 + m, f'{h:02d}:{m:02d}', etype))
 events.sort()
-
 for total, hhmm, etype in events:
     if total > now_min:
         print(f'WAIT:{hhmm}:{etype}')
         sys.exit(0)
-
 if events:
     _, hhmm, etype = events[0]
     print(f'WAIT:{hhmm}:{etype}')
 " 2>/dev/null || true
 }
 
-# Retourne le premier event passé non encore joué,
-# en se basant sur le dernier event persisté dans LAST_EVENT_FILE.
-# Pas de fenêtre temporelle arbitraire.
-# Format stdout : "HH:MM:type" — vide sinon
 get_pending_event() {
     local last_id
     last_id=$(read_last_event)
     [[ -f "$SCHEDULE_JSON" ]] || return 0
     python3 -c "
 import json, datetime, sys, re
-
 with open('$SCHEDULE_JSON') as f:
     schedule = json.load(f)
-
 now = datetime.datetime.now()
 now_min = now.hour * 60 + now.minute + now.second / 60
 today = now.strftime('%Y-%m-%d')
 raw = '$last_id'
-
 m = re.match(r'^(\d{4}-\d{2}-\d{2}) \d{2}:\d{2}-(.+)$', raw)
 last_date = m.group(1) if m else ''
 last_id   = m.group(2) if m else ''
-
-# Si pas d'historique ou redémarrage le lendemain : get_missed_events s'en charge
 if last_id == '' or last_date < today:
     sys.exit(0)
-
 events = []
 for time_str, etype in schedule.items():
     parts = time_str.strip().split(':')
@@ -199,13 +214,11 @@ for time_str, etype in schedule.items():
     h, m2 = int(parts[0]), int(parts[1])
     events.append((h * 60 + m2, f'{h:02d}:{m2:02d}', etype))
 events.sort()
-
 last_idx = -1
 for i, (total, hhmm, etype) in enumerate(events):
     if f'{hhmm}-{etype}' == last_id:
         last_idx = i
         break
-
 for i, (total, hhmm, etype) in enumerate(events):
     if i <= last_idx:
         continue
@@ -215,7 +228,6 @@ for i, (total, hhmm, etype) in enumerate(events):
 " 2>/dev/null || true
 }
 
-# Secondes restantes avant HH:MM
 seconds_until() {
     local hhmm="$1"
     python3 - <<EOF
@@ -229,10 +241,9 @@ print(int((target - now).total_seconds()))
 EOF
 }
 
-# Dispatch d'un event schedulé
 dispatch_event() {
     local event_type="$1"
-    local event_id="$2"    # "HH:MM-type" pour déduplication
+    local event_id="$2"
     log "📅  Event schedulé : $event_type (id=$event_id)"
 
     case "$event_type" in
@@ -247,7 +258,7 @@ dispatch_event() {
                 play_podcast
                 write_status "Musique" "" "" "" "" "0"
             else
-                log "WARN : fichiers manquants, diffusion ignorée"
+                log "WARN : fichiers podcast manquants, diffusion ignorée"
             fi
             ;;
         gen_news)
@@ -261,7 +272,7 @@ dispatch_event() {
                 play_news
                 write_status "Musique" "" "" "" "" "0"
             else
-                log "WARN : fichiers manquants, diffusion ignorée"
+                log "WARN : fichiers news manquants, diffusion ignorée"
             fi
             ;;
         *)
@@ -269,7 +280,6 @@ dispatch_event() {
             ;;
     esac
 
-    # Persiste l'ID après exécution réussie
     write_last_event "$event_id"
 }
 
@@ -326,9 +336,9 @@ write_status() {
         next_field="\"nextEvent\": null"
     fi
 
-    title=$(echo "$title"   | sed 's/"/\\\\"/g')
-    artist=$(echo "$artist" | sed 's/"/\\\\"/g')
-    album=$(echo "$album"   | sed 's/"/\\\\"/g')
+    title=$(echo "$title"   | sed 's/"/\\"/g')
+    artist=$(echo "$artist" | sed 's/"/\\"/g')
+    album=$(echo "$album"   | sed 's/"/\\"/g')
 
     cat > "$STATUS_JSON" <<EOF
 {
@@ -350,42 +360,13 @@ EOF
 }
 
 # =============================================================================
-# FFMPEG / FIFO
+# LECTURE
 # =============================================================================
-
-start_ffmpeg_streamer() {
-    rm -f "$FIFO"
-    mkfifo "$FIFO"
-    log "🔌  Connexion à Icecast ${ICECAST_HOST}:${ICECAST_PORT}${ICECAST_MOUNT}"
-
-    ffmpeg \
-        -hide_banner -nostdin \
-        -re \
-        -f s16le -ar 44100 -ac 2 \
-        -i "$FIFO" \
-        -codec:a libmp3lame -b:a 128k -ar 44100 \
-        -ice_name "Radio Locale" \
-        -ice_description "Ma radio IA" \
-        -content_type audio/mpeg \
-        -f mp3 \
-        "icecast://source:${ICECAST_SOURCE_PASSWORD}@${ICECAST_HOST}:${ICECAST_PORT}${ICECAST_MOUNT}" \
-        -loglevel warning &
-    FFMPEG_PID=$!
-    log "🎚️  ffmpeg streamer démarré (PID $FFMPEG_PID)"
-}
-
-check_ffmpeg_alive() {
-    if [[ -n "${FFMPEG_PID:-}" ]] && ! kill -0 "$FFMPEG_PID" 2>/dev/null; then
-        log "⚠️  ffmpeg mort, redémarrage..."
-        start_ffmpeg_streamer
-        sleep 2
-    fi
-}
 
 play_file() {
     local file="$1"
 
-    local info duration title artist album
+    local duration title artist album
     duration=$(ffprobe -v error -show_entries format=duration \
                -of default=noprint_wrappers=1:nokey=1 "$file")
     title=$(ffprobe -v error -show_entries format_tags=title \
@@ -401,36 +382,24 @@ play_file() {
     artist=$(echo "$artist" | sed 's/"/\\"/g')
     album=$(echo "$album"   | sed 's/"/\\"/g')
 
-    # Extraire la pochette
-    rm -f $COVER_ART
-    touch $COVER_ART
+    rm -f "$COVER_ART"; touch "$COVER_ART"
     ffmpeg -hide_banner -nostdin -i "$file" \
-        -map 0:v:0 -c copy -update 1 $COVER_ART -y -loglevel quiet 2>/dev/null || true
+        -map 0:v:0 -c copy -update 1 "$COVER_ART" -y -loglevel quiet 2>/dev/null || true
 
     local now_iso
     now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-    (
-        while kill -0 $BASHPID 2>/dev/null; do
-            write_status "Musique" "$now_iso" "$title" "$artist" "$album" "$duration"
-            sleep 1
-        done
-    ) &
+    (while true; do
+        write_status "Musique" "$now_iso" "$title" "$artist" "$album" "$duration"
+        sleep 1
+    done) &
     local UPDATE_PID=$!
 
-    ffmpeg -hide_banner -nostdin -i "$file" \
-           -f s16le -ar 44100 -ac 2 -loglevel warning - >> "$FIFO" || {
-        log "WARN : play_file échoué pour $(basename "$file")"
-        kill "$UPDATE_PID" 2>/dev/null || true
-        return 1
-    }
+    check_streamer
+    stream_to_fifo "$file" || log "WARN : stream_to_fifo échoué pour $(basename "$file")"
 
     kill "$UPDATE_PID" 2>/dev/null || true
 }
-
-# =============================================================================
-# LECTURE
-# =============================================================================
 
 play_next_track() {
     local playlist_dir
@@ -446,10 +415,7 @@ play_next_track() {
 
             if [[ -f "$track" ]]; then
                 log "♫  $(basename "$track")"
-                play_file "$track" &
-                MUSIC_PID=$!
-                wait "$MUSIC_PID" || true
-                MUSIC_PID=""
+                play_file "$track"
             else
                 log "WARN : introuvable : $track, ignoré"
             fi
@@ -480,11 +446,10 @@ play_podcast() {
     done) &
     STATUS_PID=$!
 
-    ffmpeg -hide_banner -nostdin -i "$PODCAST_WAV" \
-           -f s16le -ar 44100 -ac 2 -loglevel quiet - >> "$FIFO"
+    stream_to_fifo "$PODCAST_WAV" || log "WARN : stream podcast échoué"
 
-    log "🎙️  Podcast terminé"
     kill "$STATUS_PID" 2>/dev/null || true
+    log "🎙️  Podcast terminé"
 }
 
 play_announce() {
@@ -501,11 +466,10 @@ play_announce() {
     done) &
     STATUS_PID=$!
 
-    ffmpeg -hide_banner -nostdin -i "$ANNOUNCE_WAV" \
-           -f s16le -ar 44100 -ac 2 -loglevel quiet - >> "$FIFO"
+    stream_to_fifo "$ANNOUNCE_WAV" || log "WARN : stream annonce échoué"
 
-    log "🎙️  Annonce terminée"
     kill "$STATUS_PID" 2>/dev/null || true
+    log "🎙️  Annonce terminée"
 }
 
 play_news() {
@@ -522,15 +486,14 @@ play_news() {
     done) &
     STATUS_PID=$!
 
-    ffmpeg -hide_banner -nostdin -i "$NEWS_WAV" \
-           -f s16le -ar 44100 -ac 2 -loglevel quiet - >> "$FIFO"
+    stream_to_fifo "$NEWS_WAV" || log "WARN : stream news échoué"
 
-    log "📰  News terminées"
     kill "$STATUS_PID" 2>/dev/null || true
+    log "📰  News terminées"
 }
 
 play_forecast() {
-    log "Diffusion météo"
+    log "☁️  Diffusion météo"
     local duration start_iso STATUS_PID
     duration=$(ffprobe -v error -show_entries format=duration \
                -of default=noprint_wrappers=1:nokey=1 "$WEATHER_WAV")
@@ -543,11 +506,10 @@ play_forecast() {
     done) &
     STATUS_PID=$!
 
-    ffmpeg -hide_banner -nostdin -i "$WEATHER_WAV" \
-           -f s16le -ar 44100 -ac 2 -loglevel quiet - >> "$FIFO"
+    stream_to_fifo "$WEATHER_WAV" || log "WARN : stream météo échoué"
 
-    log "Fin de la météo"
     kill "$STATUS_PID" 2>/dev/null || true
+    log "☁️  Météo terminée"
 }
 
 # =============================================================================
@@ -593,7 +555,8 @@ generate_forecast() {
 
 generate_news() {
     log "⚙️  Génération flash info..."
-    nice -n 19 bash "$RADIO_GEN" "news" "https://www.france24.com/fr/rss https://www.france24.com/fr/france/rss https://www.france24.com/fr/europe/rss" && \
+    nice -n 19 bash "$RADIO_GEN" "news" \
+        "https://www.france24.com/fr/rss https://www.france24.com/fr/france/rss https://www.france24.com/fr/europe/rss" && \
         log "⚙️  Flash Info générée" || \
         log "WARN : news run.sh erreur"
     generate_forecast
@@ -606,19 +569,14 @@ wait_for_generation_with_music() {
 
     log "🎵  Musique pendant la génération..."
 
-    # Surveille GEN_PID dans un sous-shell, crée un flag quand c'est fini
     local GEN_DONE_FLAG
-    GEN_DONE_FLAG=$(mktemp)
-    rm -f "$GEN_DONE_FLAG"   # on veut tester son absence/présence
+    GEN_DONE_FLAG=$(mktemp /tmp/gen_done_XXXXXX)
+    rm -f "$GEN_DONE_FLAG"
 
-    (
-        wait "$GEN_PID" 2>/dev/null || true
-        touch "$GEN_DONE_FLAG"
-    ) &
+    ( wait "$GEN_PID" 2>/dev/null || true; touch "$GEN_DONE_FLAG" ) &
     local WATCHER_PID=$!
 
     while [[ ! -f "$GEN_DONE_FLAG" ]]; do
-        # Vérifier event imminent
         local upcoming_raw upcoming_hhmm upcoming_type upcoming_id secs_left
         upcoming_raw=$(get_next_future_event 30)
         if [[ -n "$upcoming_raw" ]]; then
@@ -627,8 +585,10 @@ wait_for_generation_with_music() {
             upcoming_id="${upcoming_hhmm}-${upcoming_type}"
             secs_left=$(seconds_until "$upcoming_hhmm")
 
-            if [[ -n "$upcoming_type" && "$upcoming_type" != "$current_event" && "$secs_left" -le 30 ]]; then
-                log "📅  NOUVEL event imminent ($upcoming_type @ $upcoming_hhmm) — on attend la génération"
+            if [[ -n "$upcoming_type" \
+               && "$upcoming_type" != "$current_event" \
+               && "$secs_left" -le 30 ]]; then
+                log "📅  Event imminent ($upcoming_type @ $upcoming_hhmm) — attente fin génération"
                 wait "$WATCHER_PID" 2>/dev/null || true
                 rm -f "$GEN_DONE_FLAG"
                 GEN_PID=""
@@ -637,30 +597,22 @@ wait_for_generation_with_music() {
             fi
         fi
 
-        play_next_track   # bloque pendant la durée d'un morceau, c'est OK
+        play_next_track
     done
 
     wait "$WATCHER_PID" 2>/dev/null || true
     rm -f "$GEN_DONE_FLAG"
     GEN_PID=""
-
-    if [[ -n "${MUSIC_PID:-}" ]]; then
-        log "⏳  Attente fin du morceau en cours..."
-        wait "$MUSIC_PID" 2>/dev/null || true
-        MUSIC_PID=""
-    fi
 }
 
 # =============================================================================
 # BOUCLE PRINCIPALE
 # =============================================================================
 
-# File d'attente des events (globale, vidée après chaque dispatch)
 EVENT_QUEUE=()
 
-# Enfile un event s'il n'est pas déjà présent
 enqueue_event() {
-    local event_id="$1"   # "HH:MM-type"
+    local event_id="$1"
     for item in "${EVENT_QUEUE[@]}"; do
         [[ "$item" == "$event_id" ]] && return 0
     done
@@ -668,7 +620,6 @@ enqueue_event() {
     log "📥  Enfilé : $event_id (file: ${#EVENT_QUEUE[@]})"
 }
 
-# Défile et joue tous les events en attente
 flush_event_queue() {
     [[ ${#EVENT_QUEUE[@]} -eq 0 ]] && return 0
     local item hhmm type
@@ -685,22 +636,9 @@ main_loop() {
     log "🗓️  Démarrage boucle principale"
 
     while true; do
-        # Vérifier que le stream fonctionne
-        check_ffmpeg_alive
-
-        # Vider la file avant chaque track
         flush_event_queue
-
-        # Ne pas démarrer un nouveau morceau si un est encore en cours
-        if [[ -n "${MUSIC_PID:-}" ]] && kill -0 "$MUSIC_PID" 2>/dev/null; then
-            wait "$MUSIC_PID" 2>/dev/null || true
-            MUSIC_PID=""
-        fi
-
-        # Jouer un morceau (sans l'interrompre)
         play_next_track
 
-        # Après la track, chercher les events passés non encore joués
         local due_raw due_hhmm due_type due_id
         due_raw=$(get_pending_event)
         if [[ -n "$due_raw" ]]; then
@@ -709,23 +647,16 @@ main_loop() {
             due_id="${due_hhmm}-${due_type}"
             enqueue_event "$due_id"
         fi
-
-        # Nettoyage des processus de génération terminés
-        if [[ -n "${GEN_PID:-}" ]] && ! kill -0 "$GEN_PID" 2>/dev/null; then
-            wait "$GEN_PID" || true
-            GEN_PID=""
-        fi
     done
 }
 
 # =============================================================================
-# DÉMARRAGE : rattrapage des events manqués
+# DÉMARRAGE
 # =============================================================================
 
 handle_startup_events() {
     log "🔍  Vérification des events manqués au démarrage..."
 
-    # Vérifier si le prochain event est dans moins de 10 min → skip tout rattrapage
     local next_raw next_hhmm secs_to_next
     next_raw=$(get_next_future_event 0)
     if [[ -n "$next_raw" ]]; then
@@ -745,8 +676,7 @@ handle_startup_events() {
         return
     fi
 
-    local last_missed_hhmm last_missed_type last_missed_id
-    local last_line
+    local last_line last_missed_hhmm last_missed_type last_missed_id
     last_line=$(echo "$missed" | tail -n1)
     last_missed_hhmm=$(echo "$last_line" | cut -d: -f1-2)
     last_missed_type=$(echo "$last_line" | cut -d: -f3)
@@ -786,13 +716,14 @@ main() {
 
     cd "$SCRIPT_DIR"
 
-    [[ -f $PODCAST_WAV ]]     && { rm -f "$PODCAST_WAV"; }
-    [[ -f $ANNOUNCE_WAV ]]    && { rm -f "$ANNOUNCE_WAV"; }
-    [[ -f $NEWS_WAV ]]        && { rm -f "$NEWS_WAV"; }
-    [[ -f $WEATHER_WAV ]]     && { rm -f "$WEATHER_WAV"; }
+    [[ -f "$PODCAST_WAV"  ]] && rm -f "$PODCAST_WAV"
+    [[ -f "$ANNOUNCE_WAV" ]] && rm -f "$ANNOUNCE_WAV"
+    [[ -f "$NEWS_WAV"     ]] && rm -f "$NEWS_WAV"
+    [[ -f "$WEATHER_WAV"  ]] && rm -f "$WEATHER_WAV"
 
     mkdir -p "music"
     [[ -z "$(ls -A ./music)" ]] && { log "ERREUR: ajoutez de la musique au dossier ./music"; exit 1; }
+
     echo "#EXTM3U" > "playlist.m3u"
     find "./music" -type f -name "*.mp3" -print0 \
       | shuf -z \
@@ -806,16 +737,14 @@ main() {
     for i in $(seq 1 30); do
         if (command -v curl >/dev/null && \
             curl -sf "http://${ICECAST_HOST}:${ICECAST_PORT}/" -o /dev/null 2>/dev/null) || \
-           (exec 3<>/dev/tcp/${ICECAST_HOST}/${ICECAST_PORT} 2>/dev/null); then
+           (exec 3<>/dev/tcp/${ICECAST_HOST}/${ICECAST_PORT} 2>/dev/null && exec 3>&-); then
             log "✅  Icecast prêt"
-            [[ -n "${AS_FD:-}" ]] && exec 3>&-
             break
         fi
         sleep 1
     done
 
-    start_ffmpeg_streamer
-    sleep 4
+    start_streamer
 
     handle_startup_events
 
@@ -824,8 +753,7 @@ main() {
 
 cleanup() {
     log "🛑  Arrêt du service radio"
-    [[ -n "${MUSIC_PID:-}"  ]] && kill "$MUSIC_PID"  2>/dev/null || true
-    [[ -n "${TIMER_PID:-}"  ]] && kill "$TIMER_PID"  2>/dev/null || true
+    exec 3>&- 2>/dev/null || true
     [[ -n "${FFMPEG_PID:-}" ]] && kill "$FFMPEG_PID" 2>/dev/null || true
     [[ -n "${GEN_PID:-}"    ]] && kill "$GEN_PID"    2>/dev/null || true
     write_status "Musique" "" "" "" "" "0"
