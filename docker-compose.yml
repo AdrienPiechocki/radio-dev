@@ -26,6 +26,7 @@ services:
       - ICECAST_HOST=icecast
       - ICECAST_PORT=8000
       - ICECAST_SOURCE_PASSWORD=hackme
+      - ICECAST_ADMIN_PASSWORD=admin
       - ICECAST_MOUNT=/radio
     volumes:
       - ./:/radio/

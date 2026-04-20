@@ -93,6 +93,30 @@ stream_to_fifo() {
         - >&3
 }
 
+update_icecast_metadata() {
+    local title="$1"
+    local artist="$2"
+    local album="$3"
+    local song="${title:+$title - }${artist:+$artist - }${album:+$album}"
+    local i
+    for i in $(seq 1 30); do
+        local response
+        response=$(curl -s \
+            "http://${ICECAST_HOST}:${ICECAST_PORT}/admin/metadata" \
+            --user "admin:${ICECAST_ADMIN_PASSWORD:-admin}" \
+            --get \
+            --data-urlencode "mount=${ICECAST_MOUNT}" \
+            --data-urlencode "mode=updinfo" \
+            --data-urlencode "charset=UTF-8" \
+            --data-urlencode "song=${song}")
+        if echo "$response" | grep -q "Metadata update successful"; then
+            return 0
+        fi
+        sleep 2
+    done
+    log "WARN : metadata Icecast non envoyée après 30 tentatives"
+}
+
 # =============================================================================
 # SCHEDULING
 # =============================================================================
@@ -397,7 +421,8 @@ play_file() {
 
     local now_iso
     now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
+    ( sleep 3 && update_icecast_metadata "$title" "$artist" "$album" ) &
+    local META_PID=$!
     (while true; do
         write_status "Musique" "$now_iso" "$title" "$artist" "$album" "$duration"
         sleep 1
@@ -408,6 +433,7 @@ play_file() {
     stream_to_fifo "$file" || log "WARN : stream_to_fifo échoué pour $(basename "$file")"
 
     kill "$UPDATE_PID" 2>/dev/null || true
+    kill "$META_PID"   2>/dev/null || true
 }
 
 play_next_track() {
@@ -448,6 +474,7 @@ play_podcast() {
                -of default=noprint_wrappers=1:nokey=1 "$PODCAST_WAV")
     [[ -z "$duration" ]] && duration=0
     start_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    update_icecast_metadata "$(get_podcast)" "Chronique IA" ""
 
     (while true; do
         write_status "Podcast" "$start_iso" "$(get_podcast)" "Chronique IA" "" "$duration"
@@ -468,6 +495,7 @@ play_announce() {
                -of default=noprint_wrappers=1:nokey=1 "$ANNOUNCE_WAV")
     [[ -z "$duration" ]] && duration=0
     start_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    update_icecast_metadata "Annonce" "Chronique IA" ""
 
     (while true; do
         write_status "Annonce" "$start_iso" "Annonce" "Chronique IA" "" "$duration"
@@ -488,6 +516,7 @@ play_news() {
                -of default=noprint_wrappers=1:nokey=1 "$NEWS_WAV")
     [[ -z "$duration" ]] && duration=0
     start_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    update_icecast_metadata "Flash Info" "News IA" ""
 
     (while true; do
         write_status "News" "$start_iso" "Flash info" "News IA" "" "$duration"
@@ -508,6 +537,7 @@ play_forecast() {
                -of default=noprint_wrappers=1:nokey=1 "$WEATHER_WAV")
     [[ -z "$duration" ]] && duration=0
     start_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    update_icecast_metadata "Bulletin Météo" "News IA" ""
 
     (while true; do
         write_status "Météo" "$start_iso" "Bulletin Météo" "News IA" "" "$duration"
