@@ -81,9 +81,13 @@ check_streamer() {
 # ffmpeg décode en PCM s16le 44100 stéréo et écrit dans le fd ouvert
 stream_to_fifo() {
     local file="$1"
+    local gain="${2:-}"
+    local af_opts=()
+    [[ -n "$gain" ]] && af_opts=(-af "volume=${gain}")
     ffmpeg -hide_banner -nostdin \
         -i "$file" \
         -map 0:a:0 \
+        "${af_opts[@]}" \
         -f s16le -ar 44100 -ac 2 \
         -loglevel warning \
         - >&3
@@ -450,7 +454,7 @@ play_podcast() {
     done) &
     STATUS_PID=$!
 
-    stream_to_fifo "$PODCAST_WAV" || log "WARN : stream podcast échoué"
+    stream_to_fifo "$PODCAST_WAV" "8dB" || log "WARN : stream podcast échoué"
 
     kill "$STATUS_PID" 2>/dev/null || true
     log "🎙️  Podcast terminé"
@@ -470,7 +474,7 @@ play_announce() {
     done) &
     STATUS_PID=$!
 
-    stream_to_fifo "$ANNOUNCE_WAV" || log "WARN : stream annonce échoué"
+    stream_to_fifo "$ANNOUNCE_WAV" "8dB" || log "WARN : stream annonce échoué"
 
     kill "$STATUS_PID" 2>/dev/null || true
     log "🎙️  Annonce terminée"
@@ -490,7 +494,7 @@ play_news() {
     done) &
     STATUS_PID=$!
 
-    stream_to_fifo "$NEWS_WAV" || log "WARN : stream news échoué"
+    stream_to_fifo "$NEWS_WAV" "8dB" || log "WARN : stream news échoué"
 
     kill "$STATUS_PID" 2>/dev/null || true
     log "📰  News terminées"
@@ -510,7 +514,7 @@ play_forecast() {
     done) &
     STATUS_PID=$!
 
-    stream_to_fifo "$WEATHER_WAV" || log "WARN : stream météo échoué"
+    stream_to_fifo "$WEATHER_WAV" "8dB" || log "WARN : stream météo échoué"
 
     kill "$STATUS_PID" 2>/dev/null || true
     log "☁️  Météo terminée"
@@ -726,10 +730,10 @@ main() {
 
     cd "$SCRIPT_DIR"
 
-    # [[ -f "$PODCAST_WAV"  ]] && rm -f "$PODCAST_WAV"
-    # [[ -f "$ANNOUNCE_WAV" ]] && rm -f "$ANNOUNCE_WAV"
-    # [[ -f "$NEWS_WAV"     ]] && rm -f "$NEWS_WAV"
-    # [[ -f "$WEATHER_WAV"  ]] && rm -f "$WEATHER_WAV"
+    [[ -f "$PODCAST_WAV"  ]] && rm -f "$PODCAST_WAV"
+    [[ -f "$ANNOUNCE_WAV" ]] && rm -f "$ANNOUNCE_WAV"
+    [[ -f "$NEWS_WAV"     ]] && rm -f "$NEWS_WAV"
+    [[ -f "$WEATHER_WAV"  ]] && rm -f "$WEATHER_WAV"
 
     mkdir -p "music"
     [[ -z "$(ls -A ./music)" ]] && { log "ERREUR: ajoutez de la musique au dossier ./music"; exit 1; }
