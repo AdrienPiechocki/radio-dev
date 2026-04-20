@@ -251,6 +251,7 @@ dispatch_event() {
             generate_podcast &
             GEN_PID=$!
             wait_for_generation_with_music "gen_podcast"
+            write_last_event "$event_id"
             ;;
         run_podcast)
             rm -f "$COVER_ART"; touch "$COVER_ART"
@@ -258,6 +259,7 @@ dispatch_event() {
                 play_announce
                 play_podcast
                 write_status "Musique" "" "" "" "" "0"
+                write_last_event "$event_id"
             else
                 log "WARN : fichiers podcast manquants, diffusion ignorée"
             fi
@@ -266,6 +268,7 @@ dispatch_event() {
             generate_news &
             GEN_PID=$!
             wait_for_generation_with_music "gen_news"
+            write_last_event "$event_id"
             ;;
         run_news)
             rm -f "$COVER_ART"; touch "$COVER_ART"
@@ -273,6 +276,7 @@ dispatch_event() {
                 play_forecast
                 play_news
                 write_status "Musique" "" "" "" "" "0"
+                write_last_event "$event_id"
             else
                 log "WARN : fichiers news manquants, diffusion ignorée"
             fi
@@ -281,8 +285,6 @@ dispatch_event() {
             log "WARN : event_type inconnu : $event_type"
             ;;
     esac
-
-    write_last_event "$event_id"
 }
 
 # =============================================================================
