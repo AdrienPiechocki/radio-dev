@@ -724,10 +724,10 @@ main() {
 
     cd "$SCRIPT_DIR"
 
-    [[ -f "$PODCAST_WAV"  ]] && rm -f "$PODCAST_WAV"
-    [[ -f "$ANNOUNCE_WAV" ]] && rm -f "$ANNOUNCE_WAV"
-    [[ -f "$NEWS_WAV"     ]] && rm -f "$NEWS_WAV"
-    [[ -f "$WEATHER_WAV"  ]] && rm -f "$WEATHER_WAV"
+    # [[ -f "$PODCAST_WAV"  ]] && rm -f "$PODCAST_WAV"
+    # [[ -f "$ANNOUNCE_WAV" ]] && rm -f "$ANNOUNCE_WAV"
+    # [[ -f "$NEWS_WAV"     ]] && rm -f "$NEWS_WAV"
+    # [[ -f "$WEATHER_WAV"  ]] && rm -f "$WEATHER_WAV"
 
     mkdir -p "music"
     [[ -z "$(ls -A ./music)" ]] && { log "ERREUR: ajoutez de la musique au dossier ./music"; exit 1; }
