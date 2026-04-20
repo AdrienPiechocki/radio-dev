@@ -605,30 +605,50 @@ wait_for_generation_with_music() {
     [[ -z "${GEN_PID:-}" ]] && return 0
 
     log "🎵  Musique pendant la génération..."
-    while kill -0 "$GEN_PID" 2>/dev/null; do
-        local upcoming_raw upcoming_hhmm upcoming_type upcoming_id
+
+    # Surveille GEN_PID dans un sous-shell, crée un flag quand c'est fini
+    local GEN_DONE_FLAG
+    GEN_DONE_FLAG=$(mktemp)
+    rm -f "$GEN_DONE_FLAG"   # on veut tester son absence/présence
+
+    (
+        wait "$GEN_PID" 2>/dev/null || true
+        touch "$GEN_DONE_FLAG"
+    ) &
+    local WATCHER_PID=$!
+
+    while [[ ! -f "$GEN_DONE_FLAG" ]]; do
+        # Vérifier event imminent
+        local upcoming_raw upcoming_hhmm upcoming_type upcoming_id secs_left
         upcoming_raw=$(get_next_future_event 30)
         if [[ -n "$upcoming_raw" ]]; then
             upcoming_hhmm=$(echo "$upcoming_raw" | cut -d: -f1-2)
             upcoming_type=$(echo "$upcoming_raw" | cut -d: -f3)
             upcoming_id="${upcoming_hhmm}-${upcoming_type}"
-            local secs_left
             secs_left=$(seconds_until "$upcoming_hhmm")
 
             if [[ -n "$upcoming_type" && "$upcoming_type" != "$current_event" && "$secs_left" -le 30 ]]; then
                 log "📅  NOUVEL event imminent ($upcoming_type @ $upcoming_hhmm) — on attend la génération"
-                wait "$GEN_PID" || true
+                wait "$WATCHER_PID" 2>/dev/null || true
+                rm -f "$GEN_DONE_FLAG"
                 GEN_PID=""
                 dispatch_event "$upcoming_type" "$upcoming_id"
                 return
             fi
         fi
 
-        play_next_track
+        play_next_track   # bloque pendant la durée d'un morceau, c'est OK
     done
 
-    wait "$GEN_PID" || true
+    wait "$WATCHER_PID" 2>/dev/null || true
+    rm -f "$GEN_DONE_FLAG"
     GEN_PID=""
+
+    if [[ -n "${MUSIC_PID:-}" ]]; then
+        log "⏳  Attente fin du morceau en cours..."
+        wait "$MUSIC_PID" 2>/dev/null || true
+        MUSIC_PID=""
+    fi
 }
 
 # =============================================================================
@@ -670,6 +690,12 @@ main_loop() {
 
         # Vider la file avant chaque track
         flush_event_queue
+
+        # Ne pas démarrer un nouveau morceau si un est encore en cours
+        if [[ -n "${MUSIC_PID:-}" ]] && kill -0 "$MUSIC_PID" 2>/dev/null; then
+            wait "$MUSIC_PID" 2>/dev/null || true
+            MUSIC_PID=""
+        fi
 
         # Jouer un morceau (sans l'interrompre)
         play_next_track
