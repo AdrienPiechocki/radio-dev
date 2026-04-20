@@ -253,6 +253,7 @@ dispatch_event() {
             wait_for_generation_with_music "gen_podcast"
             ;;
         run_podcast)
+            rm -f "$COVER_ART"; touch "$COVER_ART"
             if [[ -f "$PODCAST_WAV" && -f "$ANNOUNCE_WAV" ]]; then
                 play_announce
                 play_podcast
@@ -267,6 +268,7 @@ dispatch_event() {
             wait_for_generation_with_music "gen_news"
             ;;
         run_news)
+            rm -f "$COVER_ART"; touch "$COVER_ART"
             if [[ -f "$NEWS_WAV" && -f "$WEATHER_WAV" ]]; then
                 play_forecast
                 play_news
