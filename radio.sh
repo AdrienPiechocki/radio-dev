@@ -263,10 +263,10 @@ dispatch_event() {
                 play_announce
                 play_podcast
                 write_status "Musique" "" "" "" "" "0"
-                write_last_event "$event_id"
             else
                 log "WARN : fichiers podcast manquants, diffusion ignorée"
             fi
+            write_last_event "$event_id"
             ;;
         gen_news)
             generate_news &
@@ -280,13 +280,14 @@ dispatch_event() {
                 play_forecast
                 play_news
                 write_status "Musique" "" "" "" "" "0"
-                write_last_event "$event_id"
             else
                 log "WARN : fichiers news manquants, diffusion ignorée"
             fi
+            write_last_event "$event_id"
             ;;
         *)
             log "WARN : event_type inconnu : $event_type"
+            write_last_event "$event_id"
             ;;
     esac
 }
