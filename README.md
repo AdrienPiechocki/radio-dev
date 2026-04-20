@@ -10,7 +10,7 @@ Local Radio service with AI generated podcasts and news in French !
 |------|------|
 | Docker | Run the service |
 | Docker Compose | same as above |
-| Git | clone needed repos |
+
 
 ## Setup
 
@@ -21,6 +21,8 @@ docker compose up -d
 ## Usage
 
 visit this URL : http://localhost:8080/
+
+> If you plan on publishing this on the internet as a website, CHANGE THE PASSWORDS in `docker-compose.yml` and `icecast.xml` !
 
 ## Troubleshoting
 
