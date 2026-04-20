@@ -97,7 +97,9 @@ update_icecast_metadata() {
     local title="$1"
     local artist="$2"
     local album="$3"
-    local song="${title:+$title - }${artist:+$artist - }${album:+$album}"
+    local song="$title"
+    [ -n "$artist" ] && song="$song - $artist"
+    [ -n "$album" ] && song="$song - $album"
     local i
     for i in $(seq 1 30); do
         local response
