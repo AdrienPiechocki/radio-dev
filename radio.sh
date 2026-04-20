@@ -542,23 +542,29 @@ generate_announce() {
 
 generate_forecast() {
     log "⚙️  Génération bulletin météo..."
-    local hour
-    hour=$(date +%H)
+    local hour=$(date +%H)
+    local type="meteo"
+
+    # Détermination du type de bulletin
     if (( 10#$hour >= 18 )); then
-        bash "$RADIO_GEN" "meteo_demain" "" && \
-            log "⚙️  Météo générée (soir)" || \
-            log "WARN : meteo run.sh erreur"
+        type="meteo_demain"
+    elif (( 10#$hour >= 10 )); then
+        type="meteo_semaine"
+    fi
+
+    # Exécution unique
+    if bash "$RADIO_GEN" "$type"; then
+        log "⚙️  Météo générée ($type)"
     else
-        bash "$RADIO_GEN" "meteo" "" && \
-            log "⚙️  Météo générée" || \
-            log "WARN : meteo run.sh erreur"
+        log "WARN : erreur lors de l'exécution de $type"
+        return 1
     fi
 }
 
 generate_news() {
     log "⚙️  Génération flash info..."
     nice -n 19 bash "$RADIO_GEN" "news" \
-        "https://www.france24.com/fr/rss https://www.france24.com/fr/france/rss https://www.france24.com/fr/europe/rss" && \
+        "https://www.france24.com/fr/france/rss https://www.france24.com/fr/europe/rss https://www.france24.com/fr/rss https://www.bfmtv.com/rss/news-24-7/ https://www.franceinfo.fr/monde.rss https://www.franceinfo.fr/france.rss" 8 && \
         log "⚙️  Flash Info générée" || \
         log "WARN : news run.sh erreur"
     generate_forecast
