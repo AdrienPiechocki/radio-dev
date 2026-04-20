@@ -374,6 +374,14 @@ start_ffmpeg_streamer() {
     log "🎚️  ffmpeg streamer démarré (PID $FFMPEG_PID)"
 }
 
+check_ffmpeg_alive() {
+    if [[ -n "${FFMPEG_PID:-}" ]] && ! kill -0 "$FFMPEG_PID" 2>/dev/null; then
+        log "⚠️  ffmpeg mort, redémarrage..."
+        start_ffmpeg_streamer
+        sleep 2
+    fi
+}
+
 play_file() {
     local file="$1"
 
@@ -411,7 +419,11 @@ play_file() {
     local UPDATE_PID=$!
 
     ffmpeg -hide_banner -nostdin -i "$file" \
-           -f s16le -ar 44100 -ac 2 -loglevel quiet - >> "$FIFO"
+           -f s16le -ar 44100 -ac 2 -loglevel warning - >> "$FIFO" || {
+        log "WARN : play_file échoué pour $(basename "$file")"
+        kill "$UPDATE_PID" 2>/dev/null || true
+        return 1
+    }
 
     kill "$UPDATE_PID" 2>/dev/null || true
 }
@@ -653,13 +665,16 @@ main_loop() {
     log "🗓️  Démarrage boucle principale"
 
     while true; do
-        # 1. Vider la file avant chaque track
+        # Vérifier que le stream fonctionne
+        check_ffmpeg_alive
+
+        # Vider la file avant chaque track
         flush_event_queue
 
-        # 2. Jouer un morceau (sans l'interrompre)
+        # Jouer un morceau (sans l'interrompre)
         play_next_track
 
-        # 3. Après la track, chercher les events passés non encore joués
+        # Après la track, chercher les events passés non encore joués
         local due_raw due_hhmm due_type due_id
         due_raw=$(get_pending_event)
         if [[ -n "$due_raw" ]]; then
@@ -669,7 +684,7 @@ main_loop() {
             enqueue_event "$due_id"
         fi
 
-        # 4. Nettoyage des processus de génération terminés
+        # Nettoyage des processus de génération terminés
         if [[ -n "${GEN_PID:-}" ]] && ! kill -0 "$GEN_PID" 2>/dev/null; then
             wait "$GEN_PID" || true
             GEN_PID=""
