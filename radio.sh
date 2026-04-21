@@ -679,6 +679,18 @@ flush_event_queue() {
     EVENT_QUEUE=()
 }
 
+seconds_since() {
+    local hhmm="$1"
+    python3 - <<EOF
+from datetime import datetime
+now = datetime.now()
+h, m = map(int, "$hhmm".split(":"))
+target = now.replace(hour=h, minute=m, second=0, microsecond=0)
+diff = int((now - target).total_seconds())
+print(diff if diff >= 0 else -1)
+EOF
+}
+
 main_loop() {
     log "🗓️  Démarrage boucle principale"
 
@@ -715,7 +727,8 @@ main_loop() {
                 (( i++ )) || true
             done < "$PLAYLIST"
 
-            if [[ "$secs_left" -le "${track_duration:-0}" && "$secs_left" -le 30 ]]; then
+            late=$(seconds_since "$upcoming_hhmm")
+            if [[ "$secs_left" -le "${track_duration:-0}" && "$secs_left" -le 30 ]] || [[ "$late" -ge 300 ]]; then
                 log "📅  Événement $upcoming_type dans ${secs_left}s, morceau suivant durerait ~${track_duration}s → dispatch immédiat"
                 enqueue_event "$upcoming_id"
                 flush_event_queue
