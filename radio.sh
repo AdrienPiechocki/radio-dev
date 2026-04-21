@@ -684,6 +684,45 @@ main_loop() {
 
     while true; do
         flush_event_queue
+
+        # Vérifier si un événement est imminent AVANT de lancer un morceau
+        local upcoming_raw upcoming_hhmm upcoming_type upcoming_id secs_left track_duration
+
+        upcoming_raw=$(get_next_future_event 0)
+        if [[ -n "$upcoming_raw" ]]; then
+            upcoming_hhmm=$(echo "$upcoming_raw" | cut -d: -f1-2)
+            upcoming_type=$(echo "$upcoming_raw"  | cut -d: -f3)
+            upcoming_id="${upcoming_hhmm}-${upcoming_type}"
+            secs_left=$(seconds_until "$upcoming_hhmm")
+
+            # Estimer la durée du prochain morceau
+            track_duration=0
+            local playlist_dir
+            playlist_dir="$(dirname "$(realpath "$PLAYLIST")")"
+            local i=0
+            while IFS= read -r line; do
+                [[ "$line" =~ ^# || -z "$line" ]] && continue
+                if [[ $i -eq $PLAYLIST_POS ]]; then
+                    local track="$line"
+                    [[ "$track" = /* ]] || track="$playlist_dir/$line"
+                    if [[ -f "$track" ]]; then
+                        track_duration=$(ffprobe -v error -show_entries format=duration \
+                            -of default=noprint_wrappers=1:nokey=1 "$track" 2>/dev/null || echo 0)
+                        track_duration=${track_duration%.*}  # tronquer les décimales
+                    fi
+                    break
+                fi
+                (( i++ )) || true
+            done < "$PLAYLIST"
+
+            if [[ "$secs_left" -le "${track_duration:-0}" && "$secs_left" -le 30 ]]; then
+                log "📅  Événement $upcoming_type dans ${secs_left}s, morceau suivant durerait ~${track_duration}s → dispatch immédiat"
+                enqueue_event "$upcoming_id"
+                flush_event_queue
+                continue
+            fi
+        fi
+
         play_next_track
 
         local due_raw due_hhmm due_type due_id
