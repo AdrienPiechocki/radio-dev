@@ -101,7 +101,7 @@ update_icecast_metadata() {
     [ -n "$artist" ] && song="$song - $artist"
     [ -n "$album" ] && song="$song - $album"
     local i
-    for i in $(seq 1 30); do
+    for i in $(seq 1 10); do
         local response
         response=$(curl -s \
             "http://${ICECAST_HOST}:${ICECAST_PORT}/admin/metadata" \
@@ -116,7 +116,7 @@ update_icecast_metadata() {
         fi
         sleep 2
     done
-    log "WARN : metadata Icecast non envoyée après 30 tentatives"
+    log "WARN : metadata Icecast non envoyée après 10 tentatives"
 }
 
 # =============================================================================
@@ -135,21 +135,21 @@ with open('$SCHEDULE_JSON') as f:
     schedule = json.load(f)
 now = datetime.datetime.now()
 now_min = now.hour * 60 + now.minute + now.second / 60
-grace_min = $grace / 60.0
+grace_min = float($grace) / 60.0
+
 events = []
 for time_str, etype in schedule.items():
-    parts = time_str.strip().split(':')
-    if len(parts) != 2: continue
-    h, m = int(parts[0]), int(parts[1])
+    h, m = map(int, time_str.split(':'))
     events.append((h * 60 + m, f'{h:02d}:{m:02d}', etype))
 events.sort()
+
+# On ne cherche QUE les événements restant AUJOURD'HUI
 for total, hhmm, etype in events:
-    if total > now_min + grace_min:
+    if total > (now_min + grace_min):
         print(f'{hhmm}:{etype}')
         sys.exit(0)
-if events:
-    _, hhmm, etype = events[0]
-    print(f'{hhmm}:{etype}')
+# Si on arrive ici, il n'y a plus rien aujourd'hui. 
+# On ne renvoie RIEN pour éviter la boucle sur le lendemain.
 " 2>/dev/null || true
 }
 
@@ -261,13 +261,17 @@ for i, (total, hhmm, etype) in enumerate(events):
 seconds_until() {
     local hhmm="$1"
     python3 - <<EOF
-from datetime import datetime, timedelta
+from datetime import datetime
 now = datetime.now()
-h, m = map(int, "$hhmm".split(":"))
-target = now.replace(hour=h, minute=m, second=0, microsecond=0)
-if target <= now:
-    target += timedelta(days=1)
-print(int((target - now).total_seconds()))
+try:
+    h, m = map(int, "$hhmm".split(":"))
+    target = now.replace(hour=h, minute=m, second=0, microsecond=0)
+    diff = (target - now).total_seconds()
+    # On ne renvoie le délai que si l'évènement est dans le futur MAIS aujourd'hui
+    # Si diff < 0, l'heure est passée.
+    print(int(diff))
+except Exception:
+    print(-1)
 EOF
 }
 
@@ -691,6 +695,22 @@ print(diff if diff >= 0 else -1)
 EOF
 }
 
+get_track_duration_at_pos() {
+    local pos="$1"
+    local playlist_dir="$(dirname "$(realpath "$PLAYLIST")")"
+    local file=$(sed -n "$((pos + 1))p" "$PLAYLIST")
+    
+    if [[ -z "$file" || "$file" =~ ^# ]]; then
+        echo 180 # Fallback 3 min
+        return
+    fi
+
+    [[ "$file" = /* ]] || file="$playlist_dir/$file"
+    
+    local dur=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$file" 2>/dev/null || echo 180)
+    echo "${dur%.*}"
+}
+
 main_loop() {
     log "🗓️  Démarrage boucle principale"
 
@@ -707,29 +727,25 @@ main_loop() {
             upcoming_id="${upcoming_hhmm}-${upcoming_type}"
             secs_left=$(seconds_until "$upcoming_hhmm")
 
-            # Estimer la durée du prochain morceau
-            track_duration=0
-            local playlist_dir
-            playlist_dir="$(dirname "$(realpath "$PLAYLIST")")"
-            local i=0
-            while IFS= read -r line; do
-                [[ "$line" =~ ^# || -z "$line" ]] && continue
-                if [[ $i -eq $PLAYLIST_POS ]]; then
-                    local track="$line"
-                    [[ "$track" = /* ]] || track="$playlist_dir/$line"
-                    if [[ -f "$track" ]]; then
-                        track_duration=$(ffprobe -v error -show_entries format=duration \
-                            -of default=noprint_wrappers=1:nokey=1 "$track" 2>/dev/null || echo 0)
-                        track_duration=${track_duration%.*}  # tronquer les décimales
-                    fi
-                    break
+            # On récupère la durée du morceau suivant (avec fallback à 3min si erreur ffprobe)
+            track_duration=$(get_track_duration_at_pos $PLAYLIST_POS) 
+            
+            # LOGIQUE DE DÉCISION :
+            # 1. L'événement est dans moins de 5 minutes (300s)
+            # 2. ET (le morceau suivant est trop long OU l'événement est vraiment tout proche < 30s)
+            if [[ "$secs_left" -gt 0 && "$secs_left" -le 300 ]]; then
+                if [[ "$secs_left" -le "$track_duration" || "$secs_left" -le 30 ]]; then
+                    log "📅 Événement $upcoming_type imminent (${secs_left}s), musique de ${track_duration}s ignorée → dispatch."
+                    enqueue_event "$upcoming_id"
+                    flush_event_queue
+                    continue
                 fi
-                (( i++ )) || true
-            done < "$PLAYLIST"
-
+            fi
+            
+            # Gestion du retard (si on a raté le coche de plus de 30s mais moins d'une demi-heure)
             late=$(seconds_since "$upcoming_hhmm")
-            if [[ "$secs_left" -le "${track_duration:-0}" && "$secs_left" -le 30 ]] || [[ "$late" -ge 300 ]]; then
-                log "📅  Événement $upcoming_type dans ${secs_left}s, morceau suivant durerait ~${track_duration}s → dispatch immédiat"
+            if [[ "$late" -ge 30 && "$late" -lt 1800 ]]; then
+                log "⚠️ Retard détecté pour $upcoming_type (${late}s) → rattrapage immédiat."
                 enqueue_event "$upcoming_id"
                 flush_event_queue
                 continue
