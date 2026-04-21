@@ -2,6 +2,12 @@
  
 Local Radio service with AI generated podcasts and news in French !
 
+This project uses two others I made : 
+- [podcast-generator](https://github.com/AdrienPiechocki/podcast-generator) : used to generate technical podcasts
+- [radio-generator](https://github.com/AdrienPiechocki/radio-generator) : used to generate news and weather forecasts (only availiable in french)
+
+These projects will be cloned / updated when you [run **radio-dev**](#setup)
+
 ---
 
 ## Requirements
