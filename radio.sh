@@ -282,10 +282,10 @@ dispatch_event() {
 
     case "$event_type" in
         gen_podcast)
+            write_last_event "$event_id"
             generate_podcast &
             GEN_PID=$!
             wait_for_generation_with_music "gen_podcast"
-            write_last_event "$event_id"
             ;;
         run_podcast)
             rm -f "$COVER_ART"; touch "$COVER_ART"
@@ -299,10 +299,10 @@ dispatch_event() {
             write_last_event "$event_id"
             ;;
         gen_news)
+            write_last_event "$event_id"
             generate_news &
             GEN_PID=$!
             wait_for_generation_with_music "gen_news"
-            write_last_event "$event_id"
             ;;
         run_news)
             rm -f "$COVER_ART"; touch "$COVER_ART"
@@ -743,8 +743,9 @@ main_loop() {
             fi
             
             # Gestion du retard (si on a raté le coche de plus de 30s mais moins d'une demi-heure)
+            # NB: on vérifie secs_left < 0 pour s'assurer que l'event est dans le passé
             late=$(seconds_since "$upcoming_hhmm")
-            if [[ "$late" -ge 30 && "$late" -lt 1800 ]]; then
+            if [[ "$secs_left" -le 0 && "$late" -ge 30 && "$late" -lt 1800 ]]; then
                 log "⚠️ Retard détecté pour $upcoming_type (${late}s) → rattrapage immédiat."
                 enqueue_event "$upcoming_id"
                 flush_event_queue
