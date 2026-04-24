@@ -812,13 +812,15 @@ const fullSchedule = [
 
 function updateZoomTimeline() {
     const now = new Date();
-    const currentH = now.getHours();
-    const currentM = now.getMinutes();
 
+    // 1. Trouver l'index basé sur le moment présent
+    // On compare l'heure actuelle à l'heure prévue à Paris
     let currentIndex = fullSchedule.findIndex(s => {
-        if (s.h > currentH) return true;
-        if (s.h === currentH && currentM < 15) return true;
-        return false;
+        const eventInParis = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Paris"}));
+        eventInParis.setHours(s.h, 0, 0, 0);
+        
+        // Si l'événement est dans le futur ou dans la marge des 15 min
+        return eventInParis > now || Math.abs(now - eventInParis) < 15 * 60000;
     });
 
     if (currentIndex === -1) currentIndex = 0;
@@ -826,17 +828,58 @@ function updateZoomTimeline() {
     const selection = [];
     for (let i = -2; i <= 2; i++) {
         let idx = (currentIndex + i + fullSchedule.length) % fullSchedule.length;
-        selection.push({ ...fullSchedule[idx], isFocus: i === 0 });
+        const item = fullSchedule[idx];
+
+        // --- LA CONVERSION MAGIQUE ---
+        // On crée une date fictive qui représente l'heure de Paris
+        // "2024-01-01T09:00:00" dans le fuseau Europe/Paris
+        const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Europe/Paris',
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            hour12: false
+        });
+
+        // On cherche à quelle heure locale correspond le "s.h" de Paris
+        const parts = formatter.formatToParts(now);
+        const dateStr = `${parts.find(p=>p.type==='year').value}-${parts.find(p=>p.type==='month').value}-${parts.find(p=>p.type==='day').value}T${item.h.toString().padStart(2, '0')}:00:00`;
+        
+        // On crée la date en spécifiant qu'il s'agit d'une heure de Paris
+        const parisDate = new Date(new Date(dateStr).toLocaleString("en-US", {timeZone: "Europe/Paris"}));
+        
+        // .getHours() renverra l'heure locale (9h à Paris, 3h ou 4h à Québec)
+        const localH = new Date(dateStr + "Z").toLocaleTimeString('fr-FR', {
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, // Heure locale utilisateur
+            hour: '2-digit',
+            hour12: false
+        }).replace('24', '00'); // Gère le format minuit
+
+        // Pour éviter les bugs complexes de conversion inverse, voici la méthode la plus fiable :
+        const diffDate = new Date();
+        const parisTime = new Date(diffDate.toLocaleString("en-US", {timeZone: "Europe/Paris"}));
+        const localTime = new Date(diffDate.toLocaleString("en-US"));
+        const offset = (localTime - parisTime) / 3600000;
+        
+        const finalDisplayH = (item.h + Math.round(offset) + 24) % 24;
+
+        selection.push({ 
+            ...item, 
+            displayH: finalDisplayH,
+            isFocus: i === 0 
+        });
     }
 
+    // Rendu HTML
     const container = document.getElementById('zoom-timeline');
+    if(!container) return;
+
     container.innerHTML = `
         <div class="row events">
             ${selection.map(s => `<div class="${s.isFocus ? 'focus' : ''}">${s.t}</div>`).join('')}
         </div>
         <div class="timeline-line"></div>
         <div class="row hours">
-            ${selection.map(s => `<div class="${s.isFocus ? 'focus' : ''}">${s.h}h</div>`).join('')}
+            ${selection.map(s => `<div class="${s.isFocus ? 'focus' : ''}">${s.displayH}h</div>`).join('')}
         </div>
         <div class="row descs">
             ${selection.map(s => `<div class="${s.isFocus ? 'focus' : ''}">${s.desc}</div>`).join('')}
