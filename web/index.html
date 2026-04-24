@@ -509,7 +509,7 @@ h1 {
     </div>
 
     <div class="controls">
-        <audio id="radio-audio" preload="none">
+        <audio id="radio-audio">
             <source src="/icecast/radio" type="audio/mpeg">
         </audio>
 
@@ -545,8 +545,8 @@ const duration = document.getElementById('duration');
 const progressFill  = document.getElementById('progress-fill');
 const coverImg      = document.getElementById('cover-img');
 
-// burst-size Icecast : 16384 octets → ~1s à 128kbps
-const ICECAST_BURST_DELAY = -(16384 * 8 / 128000);
+// burst-size Icecast : 65535 octets → ~1s à 128kbps
+const ICECAST_BURST_DELAY = -(65535 * 8 / 128000);
 
 let displayedPodcastData = null;
 let currentPodcastData = null;
