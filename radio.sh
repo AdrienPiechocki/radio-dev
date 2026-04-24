@@ -290,14 +290,14 @@ dispatch_event() {
             LOCAL_ANNOUNCE=$(ls -tr ./outputs/announce_*.wav 2>/dev/null | head -n 1)
             LOCAL_TEXT=$(ls -tr ./outputs/podcast_*.txt 2>/dev/null | head -n 1)
             if [[ -n "$LOCAL_PODCAST" && -f "$LOCAL_PODCAST" ]]; then
-                [[ -f "$LOCAL_ANNOUNCE" ]] && play_announce "$LOCAL_ANNOUNCE"
+                [[ -n "$LOCAL_ANNOUNCE" && -f "$LOCAL_ANNOUNCE" ]] && play_announce "$LOCAL_ANNOUNCE"
                 play_podcast "$LOCAL_PODCAST"
                 rm -f "$LOCAL_PODCAST"
-                [[ -f "$LOCAL_ANNOUNCE" ]] && rm -f "$LOCAL_ANNOUNCE"
-                [[ -f "$LOCAL_TEXT" ]]     && rm -f "$LOCAL_TEXT"
+                [[ -n "$LOCAL_ANNOUNCE" && -f "$LOCAL_ANNOUNCE" ]] && rm -f "$LOCAL_ANNOUNCE"
+                [[ -n "$LOCAL_TEXT"    && -f "$LOCAL_TEXT"    ]] && rm -f "$LOCAL_TEXT"
                 write_status "Musique" "" "" "" "" "0"
             else
-                log "WARN : Aucun podcast à diffuser"
+                log "WARN : Aucun podcast .wav trouvé, run_podcast ignoré"
             fi
             write_last_event "$event_id"
             ;;
