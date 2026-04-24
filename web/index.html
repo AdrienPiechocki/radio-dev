@@ -24,7 +24,9 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            /* FIX iOS: min-height: 100vh cause overflow avec la barre Safari */
             min-height: 100vh;
+            min-height: -webkit-fill-available;
             padding: 20px;
         }
 
@@ -66,24 +68,25 @@
             align-items: center;
             justify-content: center;
             box-shadow: 0 10px 30px rgba(0,0,0,0.4);
-            width: 60vw;
-            max-width: 240px;
-            aspect-ratio: 1 / 1;
-            font-size: clamp(2rem, 5vw, 4rem);
+            /* FIX iOS: aspect-ratio mal supporté, on fixe width + height */
+            width: 240px;
+            height: 240px;
             overflow: hidden;
             position: relative;
             transition: box-shadow 0.4s ease;
         }
 
-        /* Halo coloré quand une vraie cover est affichée */
         .album-art.has-cover {
             box-shadow: 0 10px 40px rgba(187, 134, 252, 0.35), 0 0 0 1px rgba(187,134,252,0.15);
         }
 
-        /* Image de cover */
         #cover-img {
             position: absolute;
-            inset: 0;
+            /* FIX iOS: inset non supporté avant iOS 14.7 */
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
             width: 100%;
             height: 100%;
             object-fit: cover;
@@ -92,21 +95,19 @@
             transition: opacity 0.4s ease;
         }
 
-        #cover-img.visible {
-            opacity: 1;
-        }
+        #cover-img.visible { opacity: 1; }
 
-        /* Emoji fallback */
         #cover-emoji {
-            font-size: clamp(2rem, 5vw, 4rem);
+            font-size: 4rem;
             transition: opacity 0.3s ease;
-            position: relative; /* au-dessus de l'image si elle est absente */
+            position: relative;
             z-index: 1;
         }
 
         .track-info { margin-bottom: 25px; }
-        #track-title { font-size: clamp(1.1rem, 4vw, 1.5rem); font-weight: 700; margin-bottom: 6px; display: block; }
-        #track-artist { font-size: clamp(0.9rem, 3vw, 1rem); color: var(--accent); display: block; }
+        /* FIX iOS: clamp() remplacé par valeurs fixes + media queries */
+        #track-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 6px; display: block; }
+        #track-artist { font-size: 1rem; color: var(--accent); display: block; }
         #track-album { font-size: 0.85rem; color: var(--text-dim); margin-top: 4px; display: block; }
 
         /* --- Progress Bar --- */
@@ -133,8 +134,8 @@
             background: var(--accent);
             color: #121212;
             border: none;
-            width: clamp(55px, 15vw, 70px);
-            height: clamp(55px, 15vw, 70px);
+            width: 70px;
+            height: 70px;
             border-radius: 50%;
             font-size: 0;
             cursor: pointer;
@@ -144,6 +145,8 @@
             align-items: center;
             justify-content: center;
             box-shadow: 0 0 20px rgba(187, 134, 252, 0.4);
+            /* FIX iOS: évite le highlight bleu au tap */
+            -webkit-tap-highlight-color: transparent;
         }
         
         #play-btn::before {
@@ -178,7 +181,8 @@
             padding-top: 20px;
         }
 
-        #debug { position: fixed; bottom: 10px; left: 10px; font-size: 10px; color: #444; }
+        /* FIX iOS: position: fixed retiré car peut causer des glitches de layout */
+        #debug { display: none; }
 
         /* --- Volume Control --- */
         .volume-container {
@@ -188,6 +192,7 @@
         .volume-icon { font-size: 1.2rem; color: var(--text-dim); }
 
         #volume-slider {
+            /* FIX iOS: préfixe -webkit- obligatoire */
             -webkit-appearance: none;
             appearance: none;
             width: 100%; height: 4px;
@@ -212,7 +217,8 @@
 
         @media (max-width: 768px) {
             .player-card { padding: 25px; border-radius: 18px; }
-            .album-art { width: 200px; height: 200px; font-size: 3rem; }
+            .album-art { width: 200px; height: 200px; }
+            #cover-emoji { font-size: 3rem; }
             #track-title { font-size: 1.3rem; }
             #track-artist { font-size: 0.95rem; }
         }
@@ -221,12 +227,63 @@
             body { padding: 10px; }
             .player-card { padding: 20px; border-radius: 16px; }
             .header { flex-direction: column; gap: 10px; }
-            .album-art { width: 160px; height: 160px; font-size: 2.5rem; }
+            .album-art { width: 160px; height: 160px; }
+            #cover-emoji { font-size: 2.5rem; }
             #track-title { font-size: 1.1rem; }
             #track-artist { font-size: 0.9rem; }
             #play-btn { width: 60px; height: 60px; }
             .volume-container { max-width: 100%; }
             #subtitles { font-size: 0.9rem; min-height: 2.5em; }
+        }
+
+        @media (max-height: 600px) and (orientation: portrait) {
+            .album-art { display: none; }
+        }
+        
+        @media (max-height: 500px) and (orientation: landscape) {
+
+            body {
+                align-items: flex-start;
+                padding: 10px;
+            }
+
+            .player-card {
+                padding: 16px 20px;
+                border-radius: 16px;
+                max-width: 100%;
+                display: grid;
+                grid-template-columns: 120px 1fr;
+                grid-template-areas:
+                    "art    header"
+                    "art    info"
+                    "art    progress"
+                    "art    controls"
+                    "sched  sched";
+                column-gap: 20px;
+                text-align: left;
+            }
+
+            .album-art {
+                grid-area: art;
+                width: 110px;
+                height: 110px;
+                margin: 0 auto;
+                align-self: center;
+                justify-self: center;
+            }
+            .header             { grid-area: header;   margin-bottom: 6px; }
+            .track-info         { grid-area: info;     margin-bottom: 8px; }
+            .progress-container { grid-area: progress; margin-bottom: 8px; }
+            .controls           { grid-area: controls; flex-direction: row; justify-content: flex-start; gap: 16px; }
+            .schedule-container { grid-area: sched;    margin-top: 10px; padding-top: 10px; }
+
+            #subtitles { display: none; }
+
+            #track-title  { font-size: 1rem; }
+            #track-artist { font-size: 0.85rem; }
+            #track-album  { font-size: 0.75rem; }
+
+            .volume-container { max-width: 150px; margin-top: 0; }
         }
 
         /* --- Schedule --- */
@@ -269,6 +326,8 @@
             z-index: 100; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
         .timeline-tooltip.visible { opacity: 1; }
+
+        .descs { font-size: 0.65rem; color: var(--text-dim); margin-top: 4px; }
     </style>
 </head>
 <body>
@@ -301,7 +360,7 @@
     </div>
 
     <div class="controls">
-        <audio id="radio-audio" crossorigin="anonymous">
+        <audio id="radio-audio">
             <source src="/icecast/radio" type="audio/mpeg">
         </audio>
 
@@ -347,7 +406,6 @@ let lastTrackTitle     = "";
 let isFetching         = false;
 let lastCoverUrl       = "";
 
-// VARIABLES DE SYNCHRO
 let serverStartTime    = 0; 
 let playClickTime      = 0; 
 let offsetAtPlay       = 0; 
@@ -421,7 +479,6 @@ const coverEmoji = document.getElementById('cover-emoji');
 const albumArtContainer = document.getElementById('album-art-container');
 
 function updateCoverArt() {
-    // Petit délai pour laisser ffmpeg finir d'écrire le fichier
     setTimeout(() => {
         const tempImg = new Image();
         tempImg.onload = () => {
@@ -613,33 +670,16 @@ function updateZoomTimeline() {
     const container = document.getElementById('zoom-timeline');
     container.innerHTML = `
         <div class="row events">
-            ${selection.map(s => `<div class="${s.isFocus ? 'focus' : ''}" data-desc="${s.desc}">${s.t}</div>`).join('')}
+            ${selection.map(s => `<div class="${s.isFocus ? 'focus' : ''}">${s.t}</div>`).join('')}
         </div>
         <div class="timeline-line"></div>
         <div class="row hours">
-            ${selection.map(s => `<div class="${s.isFocus ? 'focus' : ''}" data-desc="${s.desc}">${s.h}h</div>`).join('')}
+            ${selection.map(s => `<div class="${s.isFocus ? 'focus' : ''}">${s.h}h</div>`).join('')}
+        </div>
+        <div class="row descs">
+            ${selection.map(s => `<div class="${s.isFocus ? 'focus' : ''}">${s.desc}</div>`).join('')}
         </div>
     `;
-
-    const cells = container.querySelectorAll('.row div');
-    const tooltip = document.getElementById('timeline-tooltip');
-
-    cells.forEach(cell => {
-        cell.addEventListener('mouseenter', (e) => {
-            const text = e.target.getAttribute('data-desc');
-            if (!text) return;
-            tooltip.textContent = text;
-            const cellRect = e.target.getBoundingClientRect();
-            const containerRect = container.getBoundingClientRect();
-            const leftPosition = (cellRect.left - containerRect.left) + (cellRect.width / 2);
-            tooltip.style.left = `${leftPosition}px`;
-            tooltip.style.transform = `translateX(-50%)`;
-            tooltip.classList.add('visible');
-        });
-        cell.addEventListener('mouseleave', () => {
-            tooltip.classList.remove('visible');
-        });
-    });
 }
 
 updateZoomTimeline();
