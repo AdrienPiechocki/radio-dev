@@ -179,6 +179,32 @@ h1 {
     margin: 0;
 }
 
+#play-btn.loading::before {
+    display: none;
+}
+
+#play-btn.loading {
+    background: transparent;
+    box-shadow: none;
+    cursor: default;
+    pointer-events: none;
+}
+
+#play-btn.loading::after {
+    content: '';
+    display: block;
+    width: 32px;
+    height: 32px;
+    border: 3px solid rgba(187, 134, 252, 0.25);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
 #play-btn:hover { transform: scale(1.05); filter: brightness(1.1); }
 #play-btn:active { transform: scale(0.95); }
 
@@ -483,7 +509,7 @@ h1 {
     </div>
 
     <div class="controls">
-        <audio id="radio-audio" preload="auto">
+        <audio id="radio-audio" preload="none">
             <source src="/icecast/radio" type="audio/mpeg">
         </audio>
 
@@ -538,7 +564,17 @@ let baseLocalTime      = 0;
 let anchorServerPos    = 0;
 let anchorAudioTime    = 0;
 
+audio.addEventListener('waiting', () => {
+    if (!audio.paused) {
+        playBtn.classList.add('loading');
+        playBtn.classList.remove('playing');
+    }
+});
+
 audio.addEventListener('playing', () => {
+    playBtn.classList.remove('loading');
+    playBtn.classList.add('playing');
+
     const now = Date.now() / 1000;
     const elapsed = now - baseLocalTime;
     const activeData = displayedPodcastData || currentPodcastData;
@@ -576,23 +612,15 @@ function parseVTT(vttText) {
     return cues;
 }
 
-let hasPlayedOnce = false;
-
 function togglePlay() {
     if (audio.paused) {
         const currentVolume = audio.volume;
 
-        if (!hasPlayedOnce) {
-            // Premier play : la connexion preload=auto est déjà établie, on joue direct
-            hasPlayedOnce = true;
-        } else {
-            // Reprise après pause : reconnexion au live pour resynchroniser
-            audio.src = '/icecast/radio?t=' + Date.now();
-            audio.volume = currentVolume;
-        }
-
+        audio.src = '/icecast/radio?t=' + Date.now();
+        audio.volume = currentVolume;
         audio.play();
-        playBtn.classList.add('playing');
+        playBtn.classList.remove('playing');
+        playBtn.classList.add('loading');
 
         if (currentPodcastData) {
             const clickLocalTime = Date.now() / 1000;
