@@ -713,11 +713,11 @@ get_track_duration_at_pos() {
 
 main_loop() {
     log "🗓️  Démarrage boucle principale"
+    local last_dispatched_id=""
 
     while true; do
         flush_event_queue
 
-        # Vérifier si un événement est imminent AVANT de lancer un morceau
         local upcoming_raw upcoming_hhmm upcoming_type upcoming_id secs_left track_duration
 
         upcoming_raw=$(get_next_future_event 0)
@@ -727,18 +727,17 @@ main_loop() {
             upcoming_id="${upcoming_hhmm}-${upcoming_type}"
             secs_left=$(seconds_until "$upcoming_hhmm")
 
-            # On récupère la durée du morceau suivant (avec fallback à 3min si erreur ffprobe)
-            track_duration=$(get_track_duration_at_pos $PLAYLIST_POS) 
-            
-            # LOGIQUE DE DÉCISION :
-            # 1. L'événement est dans moins de 5 minutes (300s)
-            # 2. ET (le morceau suivant est trop long OU l'événement est vraiment tout proche < 30s)
+            track_duration=$(get_track_duration_at_pos $PLAYLIST_POS)
+
             if [[ "$secs_left" -gt 0 && "$secs_left" -le 300 ]]; then
                 if [[ "$secs_left" -le "$track_duration" || "$secs_left" -le 30 ]]; then
-                    log "📅 Événement $upcoming_type imminent (${secs_left}s), musique de ${track_duration}s ignorée → dispatch."
-                    enqueue_event "$upcoming_id"
-                    flush_event_queue
-                    continue
+                    # ← on ne dispatche que si ce n'est pas déjà en cours/fait
+                    if [[ "$upcoming_id" != "$last_dispatched_id" ]]; then
+                        log "📅 Événement $upcoming_type imminent (${secs_left}s)..."
+                        last_dispatched_id="$upcoming_id"
+                        enqueue_event "$upcoming_id"
+                        flush_event_queue
+                    fi
                 fi
             fi
             
@@ -754,14 +753,11 @@ main_loop() {
         fi
 
         play_next_track
-
-        local due_raw due_hhmm due_type due_id
-        due_raw=$(get_pending_event)
-        if [[ -n "$due_raw" ]]; then
-            due_hhmm=$(echo "$due_raw" | cut -d: -f1-2)
-            due_type=$(echo "$due_raw" | cut -d: -f3)
-            due_id="${due_hhmm}-${due_type}"
-            enqueue_event "$due_id"
+        # reset après la musique si l'event est passé
+        if [[ -n "$last_dispatched_id" ]]; then
+            local last_hhmm
+            last_hhmm=$(echo "$last_dispatched_id" | cut -d- -f1)
+            [[ "$(seconds_until "$last_hhmm")" -lt 0 ]] && last_dispatched_id=""
         fi
     done
 }
