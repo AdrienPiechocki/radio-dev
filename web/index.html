@@ -576,15 +576,21 @@ function parseVTT(vttText) {
     return cues;
 }
 
+let hasPlayedOnce = false;
+
 function togglePlay() {
     if (audio.paused) {
-        // Si l'audio est dans un état d'erreur ou n'a jamais été chargé,
-        // on recharge le src — sinon on fait juste play() sans recréer la connexion
-        if (audio.error || audio.readyState === 0) {
-            const currentVolume = audio.volume;
+        const currentVolume = audio.volume;
+
+        if (!hasPlayedOnce) {
+            // Premier play : la connexion preload=auto est déjà établie, on joue direct
+            hasPlayedOnce = true;
+        } else {
+            // Reprise après pause : reconnexion au live pour resynchroniser
             audio.src = '/icecast/radio?t=' + Date.now();
             audio.volume = currentVolume;
         }
+
         audio.play();
         playBtn.classList.add('playing');
 
