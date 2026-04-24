@@ -285,13 +285,14 @@ dispatch_event() {
             wait_for_generation_with_music "gen_podcast"
             ;;
         run_podcast)
-            rm -f "$COVER_ART"; touch "$COVER_ART"
+            write_last_event "$event_id"
             LOCAL_PODCAST=$(ls -tr ./outputs/podcast_*.wav 2>/dev/null | head -n 1)
             LOCAL_ANNOUNCE=$(ls -tr ./outputs/announce_*.wav 2>/dev/null | head -n 1)
             LOCAL_TEXT=$(ls -tr ./outputs/podcast_*.txt 2>/dev/null | head -n 1)
             if [[ -n "$LOCAL_PODCAST" && -f "$LOCAL_PODCAST" ]]; then
-                [[ -n "$LOCAL_ANNOUNCE" && -f "$LOCAL_ANNOUNCE" ]] && play_announce "$LOCAL_ANNOUNCE"
-                play_podcast "$LOCAL_PODCAST"
+                rm -f "$COVER_ART"; touch "$COVER_ART"
+                [[ -n "$LOCAL_ANNOUNCE" && -f "$LOCAL_ANNOUNCE" ]] && { play_announce "$LOCAL_ANNOUNCE" || log "WARN : play_announce échoué, ignoré"; }
+                play_podcast "$LOCAL_PODCAST" || log "WARN : play_podcast échoué, ignoré"
                 rm -f "$LOCAL_PODCAST"
                 [[ -n "$LOCAL_ANNOUNCE" && -f "$LOCAL_ANNOUNCE" ]] && rm -f "$LOCAL_ANNOUNCE"
                 [[ -n "$LOCAL_TEXT"    && -f "$LOCAL_TEXT"    ]] && rm -f "$LOCAL_TEXT"
@@ -299,7 +300,6 @@ dispatch_event() {
             else
                 log "WARN : Aucun podcast .wav trouvé, run_podcast ignoré"
             fi
-            write_last_event "$event_id"
             ;;
         gen_news)
             write_last_event "$event_id"
