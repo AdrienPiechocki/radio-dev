@@ -576,8 +576,40 @@ function parseVTT(vttText) {
     return cues;
 }
 
+// --- Pré-fetch silencieux ---
+// On ouvre la connexion Icecast en avance pour que le burst soit déjà
+// consommé quand l'utilisateur appuie sur Play.
+let prefetchController = null;
+
+function startPrefetch() {
+    stopPrefetch();
+    prefetchController = new AbortController();
+    fetch('/icecast/radio', { signal: prefetchController.signal })
+        .then(res => {
+            const reader = res.body.getReader();
+            // Lire et jeter les chunks — on veut juste garder la connexion ouverte
+            // et laisser Icecast envoyer son burst
+            const drain = () => reader.read().then(({ done }) => {
+                if (!done && prefetchController) drain();
+            }).catch(() => {});
+            drain();
+        })
+        .catch(() => {}); // AbortError ignorée
+}
+
+function stopPrefetch() {
+    if (prefetchController) {
+        prefetchController.abort();
+        prefetchController = null;
+    }
+}
+
 function togglePlay() {
     if (audio.paused) {
+        // Abandonner le fetch silencieux — Icecast a déjà envoyé le burst,
+        // la prochaine connexion audio démarre avec un buffer quasi plein
+        stopPrefetch();
+
         const currentVolume = audio.volume;
         audio.src = '/icecast/radio?t=' + Date.now();
         audio.volume = currentVolume;
@@ -596,6 +628,8 @@ function togglePlay() {
         anchorAudioTime = 0;
         playBtn.classList.remove('playing');
         subDiv.innerHTML = "";
+        // Relancer le pré-fetch pour le prochain appui
+        startPrefetch();
     }
 }
 
@@ -753,6 +787,8 @@ async function start() {
     data.fetchedAt = Date.now() / 1000;
     updateUI(data);
     displayedPodcastData = data;
+    // Démarrer le pré-fetch silencieux dès que la page est prête
+    startPrefetch();
 }
 
 setInterval(fetchMetadata, 1000);
