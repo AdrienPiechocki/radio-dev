@@ -614,6 +614,10 @@ function parseVTT(vttText) {
 
 function togglePlay() {
     if (audio.paused) {
+        const now = Date.now() / 1000;
+        const start = new Date(currentPodcastData.startedAt).getTime() / 1000;
+
+        offsetAtPlay = (currentPodcastData.serverNow + (now - baseLocalTime)) - start;
         const currentVolume = audio.volume;
 
         audio.src = '/icecast/radio?t=' + Date.now();
@@ -726,10 +730,12 @@ function animate() {
     let currentPos;
 
     if (!audio.paused && anchorAudioTime > 0) {
-        const audioDelta = audio.currentTime - anchorAudioTime;
-        currentPos = anchorServerPos + audioDelta;
+        currentPos = offsetAtPlay + audio.currentTime;
     } else {
-        currentPos = (baseServerNow + elapsed) - start + ICECAST_BURST_DELAY;
+        const now = Date.now() / 1000;
+        const elapsed = now - baseLocalTime;
+        const start = new Date(activeData.startedAt).getTime() / 1000;
+        currentPos = (baseServerNow + elapsed) - start;
     }
 
     currentPos = Math.max(0, Math.min(currentPos, durationRaw));
@@ -846,6 +852,13 @@ function updateZoomTimeline() {
 
 updateZoomTimeline();
 setInterval(updateZoomTimeline, 60000);
+audio.addEventListener('timeupdate', () => {
+    const drift = (Date.now() / 1000 - baseLocalTime) - audio.currentTime;
+    if (drift > 15) {
+        console.log("Trop de retard, resynchronisation...");
+        // Optionnel : togglePlay(); 
+    }
+});
 </script>
 </body>
 </html>
