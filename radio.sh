@@ -16,11 +16,8 @@ COVER_ART="./web/cover.jpg"
 SCHEDULE_JSON="./schedule.json"
 LAST_EVENT_FILE="./.last_event"
 
-PODCAST_WAV="./podcast-generator/podcast.wav"
 PODCAST_GEN="./podcast-generator/run.sh"
-PODCAST_TEXT="./podcast-generator/podcast_text.txt"
 PLAYLIST="./playlist.m3u"
-ANNOUNCE_WAV="./radio-generator/announce.wav"
 NEWS_WAV="./radio-generator/news.wav"
 WEATHER_WAV="./radio-generator/weather.wav"
 RADIO_GEN="./radio-generator/run.sh"
@@ -289,12 +286,18 @@ dispatch_event() {
             ;;
         run_podcast)
             rm -f "$COVER_ART"; touch "$COVER_ART"
-            if [[ -f "$PODCAST_WAV" && -f "$ANNOUNCE_WAV" ]]; then
-                play_announce
-                play_podcast
+            LOCAL_PODCAST=$(ls -tr ./outputs/podcast_*.wav 2>/dev/null | head -n 1)
+            LOCAL_ANNOUNCE=$(ls -tr ./outputs/announce_*.wav 2>/dev/null | head -n 1)
+            LOCAL_TEXT=$(ls -tr ./outputs/podcast_*.txt 2>/dev/null | head -n 1)
+            if [[ -n "$LOCAL_PODCAST" && -f "$LOCAL_PODCAST" ]]; then
+                [[ -f "$LOCAL_ANNOUNCE" ]] && play_announce "$LOCAL_ANNOUNCE"
+                play_podcast "$LOCAL_PODCAST"
+                rm -f "$LOCAL_PODCAST"
+                [[ -f "$LOCAL_ANNOUNCE" ]] && rm -f "$LOCAL_ANNOUNCE"
+                [[ -f "$LOCAL_TEXT" ]]     && rm -f "$LOCAL_TEXT"
                 write_status "Musique" "" "" "" "" "0"
             else
-                log "WARN : fichiers podcast manquants, diffusion ignorée"
+                log "WARN : Aucun podcast à diffuser"
             fi
             write_last_event "$event_id"
             ;;
@@ -472,12 +475,13 @@ play_next_track() {
     PLAYLIST_POS=0
     play_next_track
 }
-
 play_podcast() {
-    log "🎙️  Diffusion du podcast"
+    local file_to_play="$1"
+    log "🎙️  Diffusion du podcast : $(basename "$file_to_play")"
+    
     local duration start_iso STATUS_PID
     duration=$(ffprobe -v error -show_entries format=duration \
-               -of default=noprint_wrappers=1:nokey=1 "$PODCAST_WAV")
+               -of default=noprint_wrappers=1:nokey=1 "$file_to_play")
     [[ -z "$duration" ]] && duration=0
     start_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     update_icecast_metadata "$(get_podcast)" "Chronique IA" ""
@@ -488,17 +492,18 @@ play_podcast() {
     done) &
     STATUS_PID=$!
 
-    stream_to_fifo "$PODCAST_WAV" "8dB" || log "WARN : stream podcast échoué"
+    stream_to_fifo "$file_to_play" "8dB" || log "WARN : stream podcast échoué"
 
     kill "$STATUS_PID" 2>/dev/null || true
     log "🎙️  Podcast terminé"
 }
 
 play_announce() {
-    log "🎙️  Annonce"
+    local file_to_play="$1"
+    log "🎙️  Annonce du podcast: $(basename "$file_to_play")"
     local duration start_iso STATUS_PID
     duration=$(ffprobe -v error -show_entries format=duration \
-               -of default=noprint_wrappers=1:nokey=1 "$ANNOUNCE_WAV")
+               -of default=noprint_wrappers=1:nokey=1 "$file_to_play")
     [[ -z "$duration" ]] && duration=0
     start_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     update_icecast_metadata "Annonce" "Chronique IA" ""
@@ -509,7 +514,7 @@ play_announce() {
     done) &
     STATUS_PID=$!
 
-    stream_to_fifo "$ANNOUNCE_WAV" "8dB" || log "WARN : stream annonce échoué"
+    stream_to_fifo "$file_to_play" "8dB" || log "WARN : stream annonce échoué"
 
     kill "$STATUS_PID" 2>/dev/null || true
     log "🎙️  Annonce terminée"
@@ -562,8 +567,9 @@ play_forecast() {
 # =============================================================================
 
 get_podcast() {
-    [[ -f "$PODCAST_TEXT" ]] || { echo "Podcast inconnu"; return; }
-    sed -n '2p' "$PODCAST_TEXT" | cut -c8-
+    local textfile=$(ls -tr ./outputs/podcast_*.txt 2>/dev/null | head -n 1)
+    [[ -n "$textfile" && -f "$textfile" ]] || { echo "Podcast inconnu"; return; }
+    sed -n '2p' "$textfile" | cut -c8-
 }
 
 generate_podcast() {
@@ -571,16 +577,32 @@ generate_podcast() {
     nice -n 19 bash "$PODCAST_GEN" --lang fr && \
         log "⚙️  Génération terminée" || \
         log "WARN : podcast run.sh erreur"
-    generate_announce "$(get_podcast)"
+    local ts=$(date +%Y%m%d%H%M)
+    mv ./podcast-generator/podcast.wav "./outputs/podcast_${ts}.wav"
+    mv ./podcast-generator/podcast_text.txt "./outputs/podcast_${ts}.txt"
+    ls -t ./outputs/podcast_*.wav 2>/dev/null | tail -n +8 | xargs -d '\n' rm -f -- 2>/dev/null || true
+    ls -t ./outputs/podcast_*.txt 2>/dev/null | tail -n +8 | xargs -d '\n' rm -f -- 2>/dev/null || true
+    local titre_actuel=$(sed -n '2p' "./outputs/podcast_${ts}.txt" | cut -c8-)
+    generate_announce "$titre_actuel" "$ts"
+    
     log "✅  Prêt pour le prochain podcast"
 }
 
 generate_announce() {
     local topic="$1"
-    log "⚙️  Génération de l'annonce..."
+    local ts="$2"
+    log "⚙️  Génération de l'annonce pour : $topic"
+    
     bash "$RADIO_GEN" "podcast" "$topic" && \
         log "⚙️  Annonce générée" || \
         log "WARN : announce run.sh erreur"
+        
+    mv ./radio-generator/announce.wav "./outputs/announce_${ts}.wav"
+    
+    # Nettoyage historique des annonces (garde 7)
+    ls -t ./outputs/announce_*.wav 2>/dev/null | tail -n +8 | xargs -d '\n' rm -f -- 2>/dev/null || true
+    
+    # SURTOUT : On ne supprime PAS le .txt ici !
 }
 
 generate_forecast() {
@@ -828,11 +850,11 @@ main() {
 
     cd "$SCRIPT_DIR"
 
-    [[ -f "$PODCAST_WAV"  ]] && rm -f "$PODCAST_WAV"
-    [[ -f "$ANNOUNCE_WAV" ]] && rm -f "$ANNOUNCE_WAV"
     [[ -f "$NEWS_WAV"     ]] && rm -f "$NEWS_WAV"
     [[ -f "$WEATHER_WAV"  ]] && rm -f "$WEATHER_WAV"
-
+    
+    mkdir -p ./outputs
+    
     mkdir -p "music"
     [[ -z "$(ls -A ./music)" ]] && { log "ERREUR: ajoutez de la musique au dossier ./music"; exit 1; }
 
