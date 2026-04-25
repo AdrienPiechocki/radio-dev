@@ -573,12 +573,9 @@ async function detectStream() {
             method: 'HEAD',
             signal: AbortSignal.timeout(2000)
         });
-        // Nginx répond 200 → on est sur le réseau local
-        if (res.ok || res.status === 200) {
-            STREAM_URL = '/icecast/radio-local';
-        }
+        // Seul un vrai 200 = accès local direct sans Cloudflare
+        STREAM_URL = res.ok ? '/icecast/radio-local' : '/icecast/radio-public';
     } catch (e) {
-        // Nginx a bloqué (403) ou timeout → réseau public
         STREAM_URL = '/icecast/radio-public';
     }
     audio.src = STREAM_URL;
