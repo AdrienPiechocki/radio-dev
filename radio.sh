@@ -777,6 +777,29 @@ main_loop() {
         local upcoming_raw upcoming_hhmm upcoming_type upcoming_id secs_left track_duration
 
         upcoming_raw=$(get_next_future_event 0)
+
+        # ── NOUVEAU : rattrapage via get_pending_event si get_next_future_event est vide ──
+        if [[ -z "$upcoming_raw" ]]; then
+            local pending_raw
+            pending_raw=$(get_pending_event)
+            if [[ -n "$pending_raw" ]]; then
+                local pending_hhmm pending_type pending_id pending_late
+                pending_hhmm=$(echo "$pending_raw" | cut -d: -f1-2)
+                pending_type=$(echo "$pending_raw"  | cut -d: -f3)
+                pending_id="${pending_hhmm}-${pending_type}"
+                pending_late=$(seconds_since "$pending_hhmm")
+                if [[ "$pending_late" -ge 0 && "$pending_late" -lt 1800 \
+                   && "$pending_id" != "$last_dispatched_id" ]]; then
+                    log "⚠️ Rattrapage (pending) : $pending_type (${pending_late}s de retard)"
+                    last_dispatched_id="$pending_id"
+                    enqueue_event "$pending_id"
+                    flush_event_queue
+                    continue
+                fi
+            fi
+        fi
+        # ── FIN NOUVEAU ──
+
         if [[ -n "$upcoming_raw" ]]; then
             upcoming_hhmm=$(echo "$upcoming_raw" | cut -d: -f1-2)
             upcoming_type=$(echo "$upcoming_raw"  | cut -d: -f3)
@@ -787,7 +810,6 @@ main_loop() {
 
             if [[ "$secs_left" -gt 0 && "$secs_left" -le 300 ]]; then
                 if [[ "$secs_left" -le "$track_duration" || "$secs_left" -le 30 ]]; then
-                    # ← on ne dispatche que si ce n'est pas déjà en cours/fait
                     if [[ "$upcoming_id" != "$last_dispatched_id" ]]; then
                         log "📅 Événement $upcoming_type imminent (${secs_left}s)..."
                         last_dispatched_id="$upcoming_id"
@@ -797,9 +819,6 @@ main_loop() {
                 fi
             fi
             
-            # Gestion du retard (si on a raté le coche de plus de 30s mais moins d'une demi-heure)
-            # NB: on vérifie secs_left < 0 pour s'assurer que l'event est dans le passé
-            # NB: on n'enfile pas un event déjà dispatché pour éviter la boucle infinie
             late=$(seconds_since "$upcoming_hhmm")
             if [[ "$secs_left" -le 0 && "$late" -ge 30 && "$late" -lt 1800 \
                && "$upcoming_id" != "$last_dispatched_id" ]]; then
@@ -812,7 +831,6 @@ main_loop() {
         fi
 
         play_next_track
-        # reset après la musique si l'event est passé
         if [[ -n "$last_dispatched_id" ]]; then
             local last_hhmm
             last_hhmm=$(echo "$last_dispatched_id" | cut -d- -f1)
