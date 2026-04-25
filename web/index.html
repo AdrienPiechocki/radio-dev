@@ -570,7 +570,17 @@ audio.addEventListener('ended', () => {
 });
 
 audio.addEventListener('error', (e) => {
-    console.error("Erreur Audio détectée:", e);
+    const error = audio.error;
+    let message = "Erreur inconnue";
+    
+    switch (error.code) {
+        case 1: message = "Chargement interrompu (MEDIA_ERR_ABORTED)"; break;
+        case 2: message = "Erreur réseau (MEDIA_ERR_NETWORK)"; break;
+        case 3: message = "Erreur de décodage (MEDIA_ERR_DECODE)"; break;
+        case 4: message = "Source non supportée ou introuvable (MEDIA_ERR_SRC_NOT_SUPPORTED)"; break;
+    }
+    
+    console.error("Détails Audio:", message, "Code:", error.code);
     playBtn.classList.remove('playing', 'loading');
     anchorAudioTime = 0;
 });
