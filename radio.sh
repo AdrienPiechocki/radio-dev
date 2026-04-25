@@ -454,8 +454,8 @@ play_file() {
     ffmpeg -hide_banner -nostdin \
         -i "$file" \
         -map 0:v:0 \
-        -c:v copy \
-        -f mjpeg \
+        -vframes 1 \
+        -f image2 \
         "$COVER_ART" -y -loglevel fatal 2>/dev/null || true
 
     local now_iso
