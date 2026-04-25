@@ -927,7 +927,7 @@ main() {
     echo "#EXTM3U" > "$PLAYLIST"
     find "$MUSIC_DIR" -type f -name "*.mp3" -print0 \
     | shuf -z \
-    | while IFS= read -r -d '' file; do echo "$file" >> "playlist.m3u"; done
+    | while IFS= read -r -d '' file; do echo "$file" >> "$PLAYLIST"; done
 
     [[ -f "$PLAYLIST"    ]] || { log "ERREUR : $PLAYLIST introuvable";    exit 1; }
     [[ -f "$PODCAST_GEN" ]] || { log "ERREUR : $PODCAST_GEN introuvable"; exit 1; }
