@@ -585,6 +585,14 @@ async function detectStream() {
     console.log('Stream sélectionné :', STREAM_URL);
 }
 
+function getStatusUrl() {
+    if (STREAM_URL.includes('radio-local')) {
+        return '/data/status-radio-local.json';
+    }
+    return '/data/status-radio-public.json';
+}
+
+
 audio.addEventListener('ended', () => {
     playBtn.classList.remove('playing', 'loading');
     anchorAudioTime = 0;
@@ -722,7 +730,7 @@ async function fetchMetadata() {
     if (isFetching) return;
     isFetching = true;
     try {
-        const res = await fetch('/data/status.json?t=' + Date.now());
+        const res = await fetch(getStatusUrl() + '?t=' + Date.now());
         const data = await res.json();
         data.fetchedAt = Date.now() / 1000;
         
@@ -847,7 +855,7 @@ async function start() {
     await detectStream();
     fetchMetadata();
     animate();
-    const res = await fetch('/data/status.json?t=' + Date.now());
+    const res = await fetch(getStatusUrl() + '?t=' + Date.now());
     const data = await res.json();
     data.fetchedAt = Date.now() / 1000;
     updateUI(data);

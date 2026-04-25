@@ -11,7 +11,7 @@ cd "$SCRIPT_DIR"
 
 PLAYLIST_POS=0
 
-STATUS_JSON="./status.json"
+STATUS_JSON="./status${ICECAST_MOUNT//\//-}.json"
 COVER_ART="./web/cover.jpg"
 SCHEDULE_JSON="./schedule.json"
 LAST_EVENT_FILE="./.last_event"
