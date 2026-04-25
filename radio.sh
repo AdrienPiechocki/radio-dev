@@ -308,9 +308,9 @@ dispatch_event() {
             ;;
         run_podcast)
             write_last_event "$event_id"
-            LOCAL_PODCAST=$(ls -t ./podcasts/podcast_*.wav 2>/dev/null | head -n 1)
-            LOCAL_ANNOUNCE=$(ls -t ./podcasts/announce_*.wav 2>/dev/null | head -n 1)
-            LOCAL_TEXT=$(ls -t ./podcasts/podcast_*.txt 2>/dev/null | head -n 1)
+            LOCAL_PODCAST=$(ls -t ./podcasts/podcast_*.wav 2>/dev/null | head -n 1 || true)
+            LOCAL_ANNOUNCE=$(ls -t ./podcasts/announce_*.wav 2>/dev/null | head -n 1 || true)
+            LOCAL_TEXT=$(ls -t ./podcasts/podcast_*.txt 2>/dev/null | head -n 1 || true)
             if [[ -n "$LOCAL_PODCAST" && -f "$LOCAL_PODCAST" ]]; then
                 rm -f "$COVER_ART"; touch "$COVER_ART"
                 [[ -n "$LOCAL_ANNOUNCE" && -f "$LOCAL_ANNOUNCE" ]] && { play_announce "$LOCAL_ANNOUNCE" || log "WARN : play_announce échoué, ignoré"; }
