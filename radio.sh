@@ -451,7 +451,8 @@ play_file() {
 
     rm -f "$COVER_ART"; touch "$COVER_ART"
     ffmpeg -hide_banner -nostdin -i "$file" \
-        -map 0:v:0 -c copy -update 1 "$COVER_ART" -y -loglevel quiet 2>/dev/null || true
+        -map 0:v:0 -vframes 1 \
+        "$COVER_ART" -y -loglevel quiet 2>/dev/null || true
 
     local now_iso
     now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
