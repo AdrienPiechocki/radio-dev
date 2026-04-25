@@ -109,7 +109,7 @@ stream_to_fifo() {
         "${af_opts[@]}" \
         -f s16le -ar 44100 -ac 2 \
         -loglevel error \
-        - >&3
+        - 2> >(grep -v "Invalid PNG signature" >&2) >&3
 }
 
 update_icecast_metadata() {
