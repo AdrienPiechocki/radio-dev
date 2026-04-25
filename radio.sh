@@ -58,7 +58,7 @@ start_streamer() {
         -content_type audio/mpeg \
         -f mp3 \
         "icecast://source:${ICECAST_SOURCE_PASSWORD}@${ICECAST_HOST}:${ICECAST_PORT}${ICECAST_MOUNT}" \
-        -loglevel warning &
+        -loglevel error &
     FFMPEG_PID=$!
 
     # Ouvre fd 3 en écriture avec timeout — si ffmpeg plante avant d'ouvrir le FIFO
