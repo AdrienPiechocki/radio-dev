@@ -27,6 +27,8 @@ ICECAST_PORT="${ICECAST_PORT:-8000}"
 ICECAST_SOURCE_PASSWORD="${ICECAST_SOURCE_PASSWORD:-hackme}"
 ICECAST_MOUNT="${ICECAST_MOUNT:-/radio}"
 
+RADIO_ROLE="${RADIO_ROLE:-local}"
+
 GEN_PID=""
 FFMPEG_PID=""
 FIFO="/tmp/radio_pipe"
@@ -302,9 +304,13 @@ dispatch_event() {
     case "$event_type" in
         gen_podcast)
             write_last_event "$event_id"
-            generate_podcast &
-            GEN_PID=$!
-            wait_for_generation_with_music "gen_podcast"
+            if [[ "$RADIO_ROLE" == "local" ]]; then
+                generate_podcast &
+                GEN_PID=$!
+                wait_for_generation_with_music "gen_podcast"
+            else
+                log "⏭️  Génération podcast ignorée (rôle: $RADIO_ROLE)"
+            fi
             ;;
         run_podcast)
             write_last_event "$event_id"
@@ -325,9 +331,13 @@ dispatch_event() {
             ;;
         gen_news)
             write_last_event "$event_id"
-            generate_news &
-            GEN_PID=$!
-            wait_for_generation_with_music "gen_news"
+            if [[ "$RADIO_ROLE" == "local" ]]; then
+                generate_news &
+                GEN_PID=$!
+                wait_for_generation_with_music "gen_news"
+            else
+                log "⏭️  Génération news ignorée (rôle: $RADIO_ROLE)"
+            fi
             ;;
         run_news)
             rm -f "$COVER_ART"; touch "$COVER_ART"
@@ -910,13 +920,14 @@ main() {
     
     mkdir -p ./podcasts
     
-    mkdir -p "music"
-    [[ -z "$(ls -A ./music)" ]] && { log "ERREUR: ajoutez de la musique au dossier ./music"; exit 1; }
+    MUSIC_DIR="${MUSIC_DIR:-./music}"
+    mkdir -p "$MUSIC_DIR"
+    [[ -z "$(ls -A "$MUSIC_DIR")" ]] && { log "ERREUR: ajoutez de la musique dans $MUSIC_DIR"; exit 1; }
 
     echo "#EXTM3U" > "playlist.m3u"
-    find "./music" -type f -name "*.mp3" -print0 \
-      | shuf -z \
-      | while IFS= read -r -d '' file; do echo "$file" >> "playlist.m3u"; done
+    find "$MUSIC_DIR" -type f -name "*.mp3" -print0 \
+    | shuf -z \
+    | while IFS= read -r -d '' file; do echo "$file" >> "playlist.m3u"; done
 
     [[ -f "$PLAYLIST"    ]] || { log "ERREUR : $PLAYLIST introuvable";    exit 1; }
     [[ -f "$PODCAST_GEN" ]] || { log "ERREUR : $PODCAST_GEN introuvable"; exit 1; }

@@ -1,4 +1,4 @@
-music/
+*.mp3
 podcast-generator/
 radio-generator/
 playlist.m3u
