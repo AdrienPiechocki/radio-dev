@@ -450,14 +450,13 @@ play_file() {
     artist=$(echo "$artist" | sed 's/"/\\"/g')
     album=$(echo "$album"   | sed 's/"/\\"/g')
 
-    rm -f "$COVER_ART"; touch "$COVER_ART"
-    ffmpeg -hide_banner -nostdin \
-        -i "$file" \
-        -map 0:v:0 \
-        -vframes 1 \
-        -q:v 2 \
-        "$COVER_ART" -y -loglevel fatal 2>/dev/null || true
-
+    has_video=$(ffprobe -v error -select_streams v -show_entries stream=codec_type -of csv=p=0 "$file" | head -n 1)
+    if [[ "$has_video" == "video" ]]; then
+        ffmpeg -hide_banner -nostdin -i "$file" -map 0:v:0 -c:v copy -vframes 1 "$COVER_ART" -y -loglevel quiet 2>/dev/null || true
+    else
+        rm -f "$COVER_ART"; touch "$COVER_ART"
+    fi
+        
     local now_iso
     now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     ( sleep 3 && update_icecast_metadata "$title" "$artist" "$album" ) &
