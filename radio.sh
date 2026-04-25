@@ -50,7 +50,7 @@ start_streamer() {
     ffmpeg \
         -hide_banner -nostdin \
         -re \
-        -f s16le -ar 44100 -ac 2 \
+        -f s16le -ar 44100 -ac 2 -channel_layout stereo \
         -i "$FIFO" \
         -codec:a libmp3lame -b:a 128k -ar 44100 \
         -ice_name "Radio Locale" \
@@ -61,8 +61,29 @@ start_streamer() {
         -loglevel warning &
     FFMPEG_PID=$!
 
-    # Ouvre fd 3 en écriture — bloque jusqu'à ce que ffmpeg ouvre le FIFO en lecture
-    exec 3>"$FIFO"
+    # Ouvre fd 3 en écriture avec timeout — si ffmpeg plante avant d'ouvrir le FIFO
+    # en lecture, on ne bloque pas indéfiniment (ce qui causait les restarts en boucle).
+    local waited=0
+    while true; do
+        # Tente l'ouverture en non-bloquant via sous-shell
+        if ( exec 3>"$FIFO" ) 2>/dev/null; then
+            exec 3>"$FIFO"
+            break
+        fi
+        # Vérifie que ffmpeg est toujours vivant
+        if ! kill -0 "$FFMPEG_PID" 2>/dev/null; then
+            log "❌  ffmpeg mort avant ouverture du FIFO — abandon"
+            return 1
+        fi
+        (( waited++ ))
+        if [[ $waited -ge 20 ]]; then
+            log "❌  Timeout ouverture FIFO après ${waited}s — ffmpeg ne répond pas"
+            kill "$FFMPEG_PID" 2>/dev/null || true
+            return 1
+        fi
+        sleep 0.5
+    done
+
     log "🔌  Streamer démarré (PID $FFMPEG_PID)"
 }
 
@@ -86,7 +107,7 @@ stream_to_fifo() {
         -map 0:a:0 \
         "${af_opts[@]}" \
         -f s16le -ar 44100 -ac 2 \
-        -loglevel warning \
+        -loglevel error \
         - >&3
 }
 
@@ -885,7 +906,11 @@ main() {
         sleep 1
     done
 
-    start_streamer
+    if ! start_streamer; then
+        log "❌  Impossible de démarrer le streamer, attente 10s avant retry..."
+        sleep 10
+        exit 1
+    fi
 
     handle_startup_events
 
