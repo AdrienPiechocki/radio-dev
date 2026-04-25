@@ -451,18 +451,10 @@ play_file() {
     album=$(echo "$album"   | sed 's/"/\\"/g')
 
     rm -f "$COVER_ART"; touch "$COVER_ART"
-    python3 - "$file" "$COVER_ART" <<'PYEOF' 2>/dev/null || true
-import sys
-with open(sys.argv[1], 'rb') as f:
-data = f.read()
-# Cherche le magic bytes JPEG dans les tags ID3
-pos = data.find(b'\xff\xd8\xff')
-if pos != -1:
-end = data.find(b'\xff\xd9', pos)
-if end != -1:
-    with open(sys.argv[2], 'wb') as out:
-        out.write(data[pos:end+2])
-PYEOF
+    ffmpeg -hide_banner -nostdin -i "$file" \
+        -map 0:v:0 -vframes 1 \
+        "$COVER_ART" -y 2>&1 \
+        | grep -Ev "Invalid PNG signature|^$" >&2 || true
 
     local now_iso
     now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
