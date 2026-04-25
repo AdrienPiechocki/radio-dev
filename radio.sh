@@ -452,7 +452,7 @@ play_file() {
 
     has_video=$(ffprobe -v error -select_streams v -show_entries stream=codec_type -of csv=p=0 "$file" | head -n 1)
     if [[ "$has_video" == "video" ]]; then
-        ffmpeg -hide_banner -nostdin -i "$file" -map 0:v:0 -c:v mjpeg "$COVER_ART" -y -loglevel quiet 2>/dev/null || true
+        ffmpeg -hide_banner -nostdin -i "$file" -map 0:v:0 -c:v copy -f image2 "$COVER_ART" -y -loglevel quiet 2>/dev/null || true
     else
         rm -f "$COVER_ART"; touch "$COVER_ART"
     fi
