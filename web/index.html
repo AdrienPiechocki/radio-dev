@@ -510,7 +510,7 @@ h1 {
 
     <div class="controls">
         <audio id="radio-audio">
-            <source src="/icecast/radio" type="audio/mpeg">
+            <!-- src injecté dynamiquement par détectStream() -->
         </audio>
 
         <button id="play-btn" onclick="togglePlay()"></button>
@@ -564,6 +564,27 @@ let baseLocalTime      = 0;
 let anchorServerPos    = 0;
 let anchorAudioTime    = 0;
 
+
+let STREAM_URL = '/icecast/radio-public'; // fallback par défaut
+
+async function detectStream() {
+    try {
+        const res = await fetch('/icecast/radio-local', {
+            method: 'HEAD',
+            signal: AbortSignal.timeout(2000)
+        });
+        // Nginx répond 200 → on est sur le réseau local
+        if (res.ok || res.status === 200) {
+            STREAM_URL = '/icecast/radio-local';
+        }
+    } catch (e) {
+        // Nginx a bloqué (403) ou timeout → réseau public
+        STREAM_URL = '/icecast/radio-public';
+    }
+    audio.src = STREAM_URL;
+    console.log('Stream sélectionné :', STREAM_URL);
+}
+
 audio.addEventListener('ended', () => {
     playBtn.classList.remove('playing', 'loading');
     anchorAudioTime = 0;
@@ -580,7 +601,7 @@ audio.addEventListener('error', (e) => {
         setTimeout(() => {
             if (audio.paused) return; // L'utilisateur a peut-être voulu pause
             const vol = audio.volume;
-            audio.src = '/icecast/radio?t=' + Date.now();
+            audio.src = STREAM_URL + '?t=' + Date.now();
             audio.volume = vol;
             audio.play().catch(console.error);
         }, 3000);
@@ -598,7 +619,7 @@ audio.addEventListener('waiting', () => {
             if (!audio.paused && playBtn.classList.contains('loading')) {
                 console.log("Reconnexion du flux...");
                 const vol = audio.volume;
-                audio.src = '/icecast/radio?t=' + Date.now();
+                audio.src = STREAM_URL + '?t=' + Date.now();
                 audio.volume = vol;
                 audio.play().catch(err => {
                     console.error("Échec de la reprise auto:", err);
@@ -655,7 +676,7 @@ function togglePlay() {
     if (audio.paused) {
         const currentVolume = audio.volume;
 
-        audio.src = '/icecast/radio?t=' + Date.now();
+        audio.src = STREAM_URL + '?t=' + Date.now();
         audio.volume = currentVolume;
         audio.play();
         playBtn.classList.remove('playing');
@@ -733,7 +754,7 @@ async function fetchMetadata() {
                 
                 const isNewShow = data.event !== displayedPodcastData?.event;
                 if (isNewShow && (audio.paused || audio.ended)) {
-                    audio.src = '/icecast/radio?t=' + Date.now();
+                    audio.src = STREAM_URL + '?t=' + Date.now();
                 }
                 displayedPodcastData = data;
                 updateUI(data);
@@ -823,6 +844,7 @@ updateVolume();
 volumeSlider.addEventListener('input', updateVolume);
 
 async function start() {
+    await detectStream();
     fetchMetadata();
     animate();
     const res = await fetch('/data/status.json?t=' + Date.now());
