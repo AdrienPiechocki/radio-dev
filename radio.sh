@@ -452,10 +452,11 @@ play_file() {
 
     rm -f "$COVER_ART"; touch "$COVER_ART"
     ffmpeg -hide_banner -nostdin \
-        -codec:v mjpeg \
         -i "$file" \
-        -map 0:v:0 -vframes 1 \
-        "$COVER_ART" -y -loglevel error 2>/dev/null || true
+        -an -vn \
+        -dump_attachment:v:0 "$COVER_ART" \
+        -loglevel error \
+        -y 2>/dev/null || true
 
     local now_iso
     now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
