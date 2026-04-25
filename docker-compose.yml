@@ -59,6 +59,8 @@ services:
     container_name: radio-web
     ports:
       - "8080:80"
+    depends_on:
+      - icecast
     volumes:
       - ./web:/usr/share/nginx/html:ro
       - ./radio-generator:/data/radio-gen
