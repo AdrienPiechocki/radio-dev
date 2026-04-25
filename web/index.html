@@ -569,11 +569,10 @@ let STREAM_URL = '/icecast/radio-public'; // fallback par défaut
 
 async function detectStream() {
     try {
-        const res = await fetch('/icecast/radio-local', {
-            method: 'HEAD',
+        const res = await fetch('/local-check', {
+            method: 'GET',
             signal: AbortSignal.timeout(2000)
         });
-        // Seul un vrai 200 = accès local direct sans Cloudflare
         STREAM_URL = res.ok ? '/icecast/radio-local' : '/icecast/radio-public';
     } catch (e) {
         STREAM_URL = '/icecast/radio-public';
