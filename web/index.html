@@ -587,6 +587,13 @@ function getStatusUrl() {
     }
     return '/data/status-radio-public.json';
 }
+function getCoverUrl() {
+    if (STREAM_URL.includes('radio-local')) {
+        return '/cover-radio-local.jpg';
+    }
+    return '/cover-radio-public.jpg';
+}
+
 
 
 audio.addEventListener('ended', () => {
@@ -718,7 +725,7 @@ function updateCoverArt() {
             coverEmoji.style.opacity = '1';
             albumArtContainer.classList.remove('has-cover');
         };
-        tempImg.src = "/cover.jpg?t=" + Date.now();
+        tempImg.src = getCoverUrl() + "?t=" + Date.now();
     }, 500);
 }
 
