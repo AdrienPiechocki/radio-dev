@@ -40,10 +40,8 @@ services:
     container_name: radio-public
     restart: unless-stopped
     depends_on:
-      - ollama
       - icecast
     environment:
-      - OLLAMA_HOST=http://radio-ollama:11434
       - ICECAST_HOST=icecast
       - ICECAST_PORT=8000
       - ICECAST_SOURCE_PASSWORD=hackme
