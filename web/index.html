@@ -568,13 +568,9 @@ let anchorAudioTime    = 0;
 let STREAM_URL = '/icecast/radio-public'; // fallback par défaut
 
 async function detectStream() {
-    try {
-        const res = await fetch('/ping-reseau-local', {
-            method: 'GET',
-            signal: AbortSignal.timeout(2000)
-        });
-        STREAM_URL = res.ok ? '/icecast/radio-local' : '/icecast/radio-public';
-    } catch (e) {
+    if (window.location.hostname === '192.168.1.20') {
+        STREAM_URL = '/icecast/radio-local';
+    } else {
         STREAM_URL = '/icecast/radio-public';
     }
     audio.src = STREAM_URL;
