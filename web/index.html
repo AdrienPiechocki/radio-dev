@@ -568,7 +568,8 @@ let anchorAudioTime    = 0;
 let STREAM_URL = '/icecast/radio-public'; // fallback par défaut
 
 async function detectStream() {
-    if (window.location.hostname === '192.168.1.20') {
+    const localHosts = ['192.168.1.20', 'radio-local.adrien-dev.fr'];
+    if (localHosts.includes(window.location.hostname)) {
         STREAM_URL = '/icecast/radio-local';
     } else {
         STREAM_URL = '/icecast/radio-public';
