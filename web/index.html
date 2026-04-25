@@ -564,14 +564,39 @@ let baseLocalTime      = 0;
 let anchorServerPos    = 0;
 let anchorAudioTime    = 0;
 
+audio.addEventListener('ended', () => {
+    playBtn.classList.remove('playing', 'loading');
+    anchorAudioTime = 0;
+});
+
+audio.addEventListener('error', () => {
+    playBtn.classList.remove('playing', 'loading');
+    anchorAudioTime = 0;
+});
+
+let waitingTimeout = null;
+
 audio.addEventListener('waiting', () => {
     if (!audio.paused) {
         playBtn.classList.add('loading');
         playBtn.classList.remove('playing');
+        // Si le buffering dure plus de 15s, on considère le stream mort
+        waitingTimeout = setTimeout(() => {
+            if (!audio.paused && playBtn.classList.contains('loading')) {
+                // Tentative de reconnexion automatique
+                const vol = audio.volume;
+                audio.src = '/icecast/radio?t=' + Date.now();
+                audio.volume = vol;
+                audio.play().catch(() => {
+                    playBtn.classList.remove('playing', 'loading');
+                });
+            }
+        }, 15000);
     }
 });
 
 audio.addEventListener('playing', () => {
+    clearTimeout(waitingTimeout);
     playBtn.classList.remove('loading');
     playBtn.classList.add('playing');
 
