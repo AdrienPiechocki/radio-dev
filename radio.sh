@@ -17,7 +17,7 @@ SCHEDULE_JSON="./schedule.json"
 LAST_EVENT_FILE="./.last_event"
 
 PODCAST_GEN="./podcast-generator/run.sh"
-PLAYLIST="./playlist.m3u"
+PLAYLIST="./playlist${ICECAST_MOUNT//\//-}.m3u"
 NEWS_WAV="./radio-generator/news.wav"
 WEATHER_WAV="./radio-generator/weather.wav"
 RADIO_GEN="./radio-generator/run.sh"
