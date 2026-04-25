@@ -1,7 +1,7 @@
 *.mp3
 podcast-generator/
 radio-generator/
-playlist.m3u
+playlist*
 .last_event*
-web/cover.jpg
+web/cover*
 podcasts/
