@@ -793,9 +793,12 @@ main_loop() {
             
             # Gestion du retard (si on a raté le coche de plus de 30s mais moins d'une demi-heure)
             # NB: on vérifie secs_left < 0 pour s'assurer que l'event est dans le passé
+            # NB: on n'enfile pas un event déjà dispatché pour éviter la boucle infinie
             late=$(seconds_since "$upcoming_hhmm")
-            if [[ "$secs_left" -le 0 && "$late" -ge 30 && "$late" -lt 1800 ]]; then
+            if [[ "$secs_left" -le 0 && "$late" -ge 30 && "$late" -lt 1800 \
+               && "$upcoming_id" != "$last_dispatched_id" ]]; then
                 log "⚠️ Retard détecté pour $upcoming_type (${late}s) → rattrapage immédiat."
+                last_dispatched_id="$upcoming_id"
                 enqueue_event "$upcoming_id"
                 flush_event_queue
                 continue
@@ -899,7 +902,7 @@ main() {
     for i in $(seq 1 30); do
         if (command -v curl >/dev/null && \
             curl -sf "http://${ICECAST_HOST}:${ICECAST_PORT}/" -o /dev/null 2>/dev/null) || \
-           (exec 3<>/dev/tcp/${ICECAST_HOST}/${ICECAST_PORT} 2>/dev/null && exec 3>&-); then
+           (exec 9<>/dev/tcp/${ICECAST_HOST}/${ICECAST_PORT} 2>/dev/null && exec 9>&-); then
             log "✅  Icecast prêt"
             break
         fi
