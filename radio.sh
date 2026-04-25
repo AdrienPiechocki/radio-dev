@@ -439,10 +439,10 @@ play_file() {
     probe=$(ffprobe -v error -show_entries format=duration:format_tags=title,artist,album \
             -of default=noprint_wrappers=1 "$file" 2>/dev/null)
 
-    duration=$(echo "$probe" | grep '^duration=' | cut -d= -f2)
-    title=$(echo    "$probe" | grep '^TAG:title='  | cut -d= -f2-)
-    artist=$(echo   "$probe" | grep '^TAG:artist=' | cut -d= -f2-)
-    album=$(echo    "$probe" | grep '^TAG:album='  | cut -d= -f2-)
+    duration=$(echo "$probe" | grep '^duration='   | cut -d= -f2  || true)
+    title=$(echo    "$probe" | grep '^TAG:title='  | cut -d= -f2- || true)
+    artist=$(echo   "$probe" | grep '^TAG:artist=' | cut -d= -f2- || true)
+    album=$(echo    "$probe" | grep '^TAG:album='  | cut -d= -f2- || true)
 
     [[ -z "$duration" ]] && duration=0
     [[ -z "$title"    ]] && title=$(basename "$file")
@@ -458,7 +458,7 @@ play_file() {
     else
         rm -f "$COVER_ART"; touch "$COVER_ART"
     fi
-            
+
     local now_iso
     now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     ( sleep 3 && update_icecast_metadata "$title" "$artist" "$album" ) &
