@@ -455,7 +455,7 @@ play_file() {
         -i "$file" \
         -map 0:v:0 \
         -vframes 1 \
-        -f image2 \
+        -q:v 2 \
         "$COVER_ART" -y -loglevel fatal 2>/dev/null || true
 
     local now_iso
