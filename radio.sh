@@ -286,9 +286,9 @@ dispatch_event() {
             ;;
         run_podcast)
             write_last_event "$event_id"
-            LOCAL_PODCAST=$(ls -tr ./outputs/podcast_*.wav 2>/dev/null | head -n 1)
-            LOCAL_ANNOUNCE=$(ls -tr ./outputs/announce_*.wav 2>/dev/null | head -n 1)
-            LOCAL_TEXT=$(ls -tr ./outputs/podcast_*.txt 2>/dev/null | head -n 1)
+            LOCAL_PODCAST=$(ls -t ./podcasts/podcast_*.wav 2>/dev/null | head -n 1)
+            LOCAL_ANNOUNCE=$(ls -t ./podcasts/announce_*.wav 2>/dev/null | head -n 1)
+            LOCAL_TEXT=$(ls -t ./podcasts/podcast_*.txt 2>/dev/null | head -n 1)
             if [[ -n "$LOCAL_PODCAST" && -f "$LOCAL_PODCAST" ]]; then
                 rm -f "$COVER_ART"; touch "$COVER_ART"
                 [[ -n "$LOCAL_ANNOUNCE" && -f "$LOCAL_ANNOUNCE" ]] && { play_announce "$LOCAL_ANNOUNCE" || log "WARN : play_announce échoué, ignoré"; }
@@ -296,7 +296,7 @@ dispatch_event() {
                 rm -f "$LOCAL_PODCAST"
                 [[ -n "$LOCAL_ANNOUNCE" && -f "$LOCAL_ANNOUNCE" ]] && rm -f "$LOCAL_ANNOUNCE"
                 [[ -n "$LOCAL_TEXT"    && -f "$LOCAL_TEXT"    ]] && rm -f "$LOCAL_TEXT"
-                write_status "Musique" "" "" "" "" "0"
+                write_status "Musique" "" "" "" "" "0" ""
             else
                 log "WARN : Aucun podcast .wav trouvé, run_podcast ignoré"
             fi
@@ -312,7 +312,7 @@ dispatch_event() {
             if [[ -f "$NEWS_WAV" && -f "$WEATHER_WAV" ]]; then
                 play_forecast
                 play_news
-                write_status "Musique" "" "" "" "" "0"
+                write_status "Musique" "" "" "" "" "0" ""
             else
                 log "WARN : fichiers news manquants, diffusion ignorée"
             fi
@@ -336,6 +336,7 @@ write_status() {
     local artist="${4:-}"
     local album="${5:-}"
     local duration="${6:-0}"
+    local vtt_override="${7:-}"
 
     local now
     now=$(date +%s.%N 2>/dev/null || date +%s)
@@ -360,13 +361,16 @@ write_status() {
     time_readable=$(format_time "$currentTime")
     duration_readable=$(format_time "$duration")
 
-    local vttFile=""
-    case $event in
-        Annonce)  vttFile="/radio-gen/announce.vtt?t=$(date +%s)" ;;
-        Podcast)  vttFile="/podcasts/podcast.vtt?t=$(date +%s)" ;;
-        Météo)    vttFile="/radio-gen/weather.vtt?t=$(date +%s)" ;;
-        News)     vttFile="/radio-gen/news.vtt?t=$(date +%s)" ;;
-    esac
+    local vttFile="$vtt_override"
+
+    if [[ -z "$vttFile" ]]; then
+        case $event in
+            Annonce)  vttFile="/radio-gen/announce.vtt?t=$(date +%s)" ;;
+            Podcast)  vttFile="/podcasts/podcast.vtt?t=$(date +%s)" ;;
+            Météo)    vttFile="/radio-gen/weather.vtt?t=$(date +%s)" ;;
+            News)     vttFile="/radio-gen/news.vtt?t=$(date +%s)" ;;
+        esac
+    fi
 
     local next_event_info next_time next_type next_field
     next_event_info=$(get_next_event_time)
@@ -433,7 +437,7 @@ play_file() {
     ( sleep 3 && update_icecast_metadata "$title" "$artist" "$album" ) &
     local META_PID=$!
     (while true; do
-        write_status "Musique" "$now_iso" "$title" "$artist" "$album" "$duration"
+        write_status "Musique" "$now_iso" "$title" "$artist" "$album" "$duration" ""
         sleep 1
     done) &
     local UPDATE_PID=$!
@@ -477,6 +481,7 @@ play_next_track() {
 }
 play_podcast() {
     local file_to_play="$1"
+    local vtt_file="${file_to_play%.wav}.vtt"
     log "🎙️  Diffusion du podcast : $(basename "$file_to_play")"
     
     local duration start_iso STATUS_PID
@@ -487,7 +492,7 @@ play_podcast() {
     update_icecast_metadata "$(get_podcast)" "Chronique IA" ""
 
     (while true; do
-        write_status "Podcast" "$start_iso" "$(get_podcast)" "Chronique IA" "" "$duration"
+        write_status "Podcast" "$start_iso" "$(get_podcast)" "Chronique IA" "" "$duration" "$vtt_file"
         sleep 1
     done) &
     STATUS_PID=$!
@@ -509,7 +514,7 @@ play_announce() {
     update_icecast_metadata "Annonce" "Chronique IA" ""
 
     (while true; do
-        write_status "Annonce" "$start_iso" "Annonce" "Chronique IA" "" "$duration"
+        write_status "Annonce" "$start_iso" "Annonce" "Chronique IA" "" "$duration" ""
         sleep 1
     done) &
     STATUS_PID=$!
@@ -530,7 +535,7 @@ play_news() {
     update_icecast_metadata "Flash Info" "News IA" ""
 
     (while true; do
-        write_status "News" "$start_iso" "Flash info" "News IA" "" "$duration"
+        write_status "News" "$start_iso" "Flash info" "News IA" "" "$duration" ""
         sleep 1
     done) &
     STATUS_PID=$!
@@ -551,7 +556,7 @@ play_forecast() {
     update_icecast_metadata "Bulletin Météo" "News IA" ""
 
     (while true; do
-        write_status "Météo" "$start_iso" "Bulletin Météo" "News IA" "" "$duration"
+        write_status "Météo" "$start_iso" "Bulletin Météo" "News IA" "" "$duration" ""
         sleep 1
     done) &
     STATUS_PID=$!
@@ -567,7 +572,7 @@ play_forecast() {
 # =============================================================================
 
 get_podcast() {
-    local textfile=$(ls -tr ./outputs/podcast_*.txt 2>/dev/null | head -n 1)
+    local textfile=$(ls -t ./podcasts/podcast_*.txt 2>/dev/null | head -n 1)
     [[ -n "$textfile" && -f "$textfile" ]] || { echo "Podcast inconnu"; return; }
     sed -n '2p' "$textfile" | cut -c8-
 }
@@ -578,11 +583,13 @@ generate_podcast() {
         log "⚙️  Génération terminée" || \
         log "WARN : podcast run.sh erreur"
     local ts=$(date +%Y%m%d%H%M)
-    mv ./podcast-generator/podcast.wav "./outputs/podcast_${ts}.wav"
-    mv ./podcast-generator/podcast_text.txt "./outputs/podcast_${ts}.txt"
-    ls -t ./outputs/podcast_*.wav 2>/dev/null | tail -n +8 | xargs -d '\n' rm -f -- 2>/dev/null || true
-    ls -t ./outputs/podcast_*.txt 2>/dev/null | tail -n +8 | xargs -d '\n' rm -f -- 2>/dev/null || true
-    local titre_actuel=$(sed -n '2p' "./outputs/podcast_${ts}.txt" | cut -c8-)
+    mv ./podcast-generator/podcast.wav "./podcasts/podcast_${ts}.wav"
+    mv ./podcast-generator/podcast_text.txt "./podcasts/podcast_${ts}.txt"
+    mv ./podcast-generator/podcast.vtt "./podcasts/podcast_${ts}.vtt"
+    ls -t ./podcasts/podcast_*.wav 2>/dev/null | tail -n +8 | xargs -d '\n' rm -f -- 2>/dev/null || true
+    ls -t ./podcasts/podcast_*.txt 2>/dev/null | tail -n +8 | xargs -d '\n' rm -f -- 2>/dev/null || true
+    ls -t ./podcasts/podcast_*.vtt 2>/dev/null | tail -n +8 | xargs -d '\n' rm -f -- 2>/dev/null || true
+    local titre_actuel=$(sed -n '2p' "./podcasts/podcast_${ts}.txt" | cut -c8-)
     generate_announce "$titre_actuel" "$ts"
     
     log "✅  Prêt pour le prochain podcast"
@@ -597,10 +604,10 @@ generate_announce() {
         log "⚙️  Annonce générée" || \
         log "WARN : announce run.sh erreur"
         
-    mv ./radio-generator/announce.wav "./outputs/announce_${ts}.wav"
+    mv ./radio-generator/announce.wav "./podcasts/announce_${ts}.wav"
     
     # Nettoyage historique des annonces (garde 7)
-    ls -t ./outputs/announce_*.wav 2>/dev/null | tail -n +8 | xargs -d '\n' rm -f -- 2>/dev/null || true
+    ls -t ./podcasts/announce_*.wav 2>/dev/null | tail -n +8 | xargs -d '\n' rm -f -- 2>/dev/null || true
     
     # SURTOUT : On ne supprime PAS le .txt ici !
 }
@@ -834,7 +841,7 @@ handle_startup_events() {
 
 main() {
     log "📻  Démarrage de la radio"
-    write_status "Musique" "" "" "" "" "0"
+    write_status "Musique" "" "" "" "" "0" ""
 
     if [[ -d "radio-generator/.git" ]]; then
         (cd radio-generator && git pull)
@@ -853,7 +860,7 @@ main() {
     [[ -f "$NEWS_WAV"     ]] && rm -f "$NEWS_WAV"
     [[ -f "$WEATHER_WAV"  ]] && rm -f "$WEATHER_WAV"
     
-    mkdir -p ./outputs
+    mkdir -p ./podcasts
     
     mkdir -p "music"
     [[ -z "$(ls -A ./music)" ]] && { log "ERREUR: ajoutez de la musique au dossier ./music"; exit 1; }
@@ -890,7 +897,7 @@ cleanup() {
     exec 3>&- 2>/dev/null || true
     [[ -n "${FFMPEG_PID:-}" ]] && kill "$FFMPEG_PID" 2>/dev/null || true
     [[ -n "${GEN_PID:-}"    ]] && kill "$GEN_PID"    2>/dev/null || true
-    write_status "Musique" "" "" "" "" "0"
+    write_status "Musique" "" "" "" "" "0" ""
     rm -f "$FIFO"
     exit 0
 }
