@@ -435,28 +435,30 @@ play_file() {
     local file="$1"
 
     local duration title artist album
-    duration=$(ffprobe -v error -show_entries format=duration \
-               -of default=noprint_wrappers=1:nokey=1 "$file")
-    title=$(ffprobe -v error -show_entries format_tags=title \
-            -of default=noprint_wrappers=1:nokey=1 "$file")
-    artist=$(ffprobe -v error -show_entries format_tags=artist \
-             -of default=noprint_wrappers=1:nokey=1 "$file")
-    album=$(ffprobe -v error -show_entries format_tags=album \
-            -of default=noprint_wrappers=1:nokey=1 "$file")
+    local probe
+    probe=$(ffprobe -v error -show_entries format=duration:format_tags=title,artist,album \
+            -of default=noprint_wrappers=1 "$file" 2>/dev/null)
+
+    duration=$(echo "$probe" | grep '^duration=' | cut -d= -f2)
+    title=$(echo    "$probe" | grep '^TAG:title='  | cut -d= -f2-)
+    artist=$(echo   "$probe" | grep '^TAG:artist=' | cut -d= -f2-)
+    album=$(echo    "$probe" | grep '^TAG:album='  | cut -d= -f2-)
 
     [[ -z "$duration" ]] && duration=0
     [[ -z "$title"    ]] && title=$(basename "$file")
-    title=$(echo "$title"   | sed 's/"/\\"/g')
+    title=$(echo  "$title"  | sed 's/"/\\"/g')
     artist=$(echo "$artist" | sed 's/"/\\"/g')
-    album=$(echo "$album"   | sed 's/"/\\"/g')
+    album=$(echo  "$album"  | sed 's/"/\\"/g')
 
-    has_video=$(ffprobe -v error -select_streams v -show_entries stream=codec_type -of csv=p=0 "$file" | head -n 1)
+    has_video=$(ffprobe -v quiet -select_streams v \
+                -show_entries stream=codec_type -of csv=p=0 "$file" 2>/dev/null | head -n 1)
     if [[ "$has_video" == "video" ]]; then
-        ffmpeg -hide_banner -nostdin -i "$file" -map 0:v:0 -c:v copy -f image2 "$COVER_ART" -y -loglevel quiet 2>/dev/null || true
+        ffmpeg -hide_banner -nostdin -i "$file" -map 0:v:0 -c:v copy \
+               -f image2 "$COVER_ART" -y 2>/dev/null || true
     else
         rm -f "$COVER_ART"; touch "$COVER_ART"
     fi
-        
+            
     local now_iso
     now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     ( sleep 3 && update_icecast_metadata "$title" "$artist" "$album" ) &
