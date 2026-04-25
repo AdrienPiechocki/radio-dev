@@ -14,7 +14,7 @@ PLAYLIST_POS=0
 STATUS_JSON="./status${ICECAST_MOUNT//\//-}.json"
 COVER_ART="./web/cover${ICECAST_MOUNT//\//-}.jpg"
 SCHEDULE_JSON="./schedule.json"
-LAST_EVENT_FILE="./.last_event"
+LAST_EVENT_FILE="./.last_event${ICECAST_MOUNT//\//-}"
 
 PODCAST_GEN="./podcast-generator/run.sh"
 PLAYLIST="./playlist${ICECAST_MOUNT//\//-}.m3u"
