@@ -924,7 +924,7 @@ main() {
     mkdir -p "$MUSIC_DIR"
     [[ -z "$(ls -A "$MUSIC_DIR")" ]] && { log "ERREUR: ajoutez de la musique dans $MUSIC_DIR"; exit 1; }
 
-    echo "#EXTM3U" > "playlist.m3u"
+    echo "#EXTM3U" > "$PLAYLIST"
     find "$MUSIC_DIR" -type f -name "*.mp3" -print0 \
     | shuf -z \
     | while IFS= read -r -d '' file; do echo "$file" >> "playlist.m3u"; done
