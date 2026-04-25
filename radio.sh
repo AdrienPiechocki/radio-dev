@@ -450,9 +450,11 @@ play_file() {
     album=$(echo "$album"   | sed 's/"/\\"/g')
 
     rm -f "$COVER_ART"; touch "$COVER_ART"
-    ffmpeg -hide_banner -nostdin -i "$file" \
+    ffmpeg -hide_banner -nostdin \
+        -codec:v mjpeg \
+        -i "$file" \
         -map 0:v:0 -vframes 1 \
-        "$COVER_ART" -y -loglevel quiet 2>/dev/null || true
+        "$COVER_ART" -y -loglevel error 2>/dev/null || true
 
     local now_iso
     now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
