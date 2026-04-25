@@ -569,7 +569,7 @@ let STREAM_URL = '/icecast/radio-public'; // fallback par défaut
 
 async function detectStream() {
     try {
-        const res = await fetch('/local-check', {
+        const res = await fetch('/ping-reseau-local', {
             method: 'GET',
             signal: AbortSignal.timeout(2000)
         });
