@@ -104,6 +104,7 @@ stream_to_fifo() {
     [[ -n "$gain" ]] && af_opts=(-af "volume=${gain}")
     ffmpeg -hide_banner -nostdin \
         -i "$file" \
+        -vn \
         -map 0:a:0 \
         "${af_opts[@]}" \
         -f s16le -ar 44100 -ac 2 \
