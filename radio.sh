@@ -279,6 +279,35 @@ for i, (total, hhmm, etype) in enumerate(events):
 " 2>/dev/null || true
 }
 
+get_recently_missed_event() {
+    local exclude_id="${1:-}"
+    [[ -f "$SCHEDULE_JSON" ]] || return 0
+    python3 -c "
+import json, datetime, sys, re
+with open('$SCHEDULE_JSON') as f:
+    schedule = json.load(f)
+now = datetime.datetime.now()
+now_min = now.hour * 60 + now.minute + now.second / 60
+
+events = []
+for time_str, etype in schedule.items():
+    parts = time_str.strip().split(':')
+    if len(parts) != 2: continue
+    h, m = int(parts[0]), int(parts[1])
+    events.append((h * 60 + m, f'{h:02d}:{m:02d}', etype))
+events.sort(reverse=True)  # plus récent en premier
+
+exclude = '$exclude_id'
+for total, hhmm, etype in events:
+    late_sec = (now_min - total) * 60
+    if 0 < late_sec < 600:
+        event_id = f'{hhmm}-{etype}'
+        if event_id != exclude:
+            print(f'{hhmm}:{etype}')
+            sys.exit(0)
+" 2>/dev/null || true
+}
+
 seconds_until() {
     local hhmm="$1"
     python3 - <<EOF
@@ -854,6 +883,28 @@ main_loop() {
                 continue
             fi
         fi
+
+        # ── Rattrapage post-morceau : event passé pendant la lecture ──
+        # get_next_future_event ne voit plus l'event (il est dans le passé),
+        # get_pending_event ne peut pas aider (last_event_file non écrit).
+        # On scanne directement les events passés depuis < 10 min.
+        local missed_raw missed_hhmm missed_type missed_id
+        missed_raw=$(get_recently_missed_event "$last_dispatched_id")
+        if [[ -n "$missed_raw" ]]; then
+            missed_hhmm=$(echo "$missed_raw" | cut -d: -f1-2)
+            missed_type=$(echo "$missed_raw"  | cut -d: -f3)
+            missed_id="${missed_hhmm}-${missed_type}"
+            if [[ "$missed_id" != "$last_dispatched_id" ]]; then
+                local missed_late
+                missed_late=$(seconds_since "$missed_hhmm")
+                log "⚠️  Event manqué pendant lecture : $missed_type @ $missed_hhmm (${missed_late}s de retard) → rattrapage"
+                last_dispatched_id="$missed_id"
+                enqueue_event "$missed_id"
+                flush_event_queue
+                continue
+            fi
+        fi
+        # ── Fin rattrapage post-morceau ──
 
         play_next_track
         if [[ -n "$last_dispatched_id" ]]; then
