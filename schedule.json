@@ -1,20 +1,16 @@
 {
   "01:30": "gen_podcast",
-  "02:45": "gen_podcast",
-  "04:00": "gen_podcast",
-  "05:15": "gen_podcast",
-  "06:30": "gen_podcast",
-  "07:45": "gen_podcast",
+  "03:00": "gen_podcast",
+  "04:30": "gen_podcast",
+  "06:00": "gen_podcast",
   "08:30": "gen_news",
   "09:00": "run_news",
   "10:00": "run_podcast",
   "12:00": "run_podcast",
   "12:30": "gen_news",
   "13:00": "run_news",
-  "14:00": "run_podcast",
-  "16:00": "run_podcast",
-  "18:00": "run_podcast",
+  "15:00": "run_podcast",
+  "17:00": "run_podcast",
   "19:30": "gen_news",
-  "20:00": "run_news",
-  "21:00": "run_podcast"
+  "20:00": "run_news"
 }
