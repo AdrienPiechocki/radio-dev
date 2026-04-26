@@ -908,9 +908,11 @@ main_loop() {
 
         play_next_track
         if [[ -n "$last_dispatched_id" ]]; then
-            local last_hhmm
+            local last_hhmm last_late
             last_hhmm=$(echo "$last_dispatched_id" | cut -d- -f1)
-            [[ "$(seconds_until "$last_hhmm")" -lt 0 ]] && last_dispatched_id=""
+            last_late=$(seconds_since "$last_hhmm")
+            # On ne vide last_dispatched_id qu'une fois hors de la fenêtre de rattrapage (10 min)
+            [[ "$last_late" -ge 600 ]] && last_dispatched_id=""
         fi
     done
 }
