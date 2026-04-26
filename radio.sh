@@ -314,16 +314,16 @@ dispatch_event() {
             ;;
         run_podcast)
             write_last_event "$event_id"
-            LOCAL_PODCAST=$(ls -t ./podcasts/podcast_*.wav 2>/dev/null | head -n 1 || true)
-            LOCAL_ANNOUNCE=$(ls -t ./podcasts/announce_*.wav 2>/dev/null | head -n 1 || true)
-            LOCAL_TEXT=$(ls -t ./podcasts/podcast_*.txt 2>/dev/null | head -n 1 || true)
+            LOCAL_PODCAST=$(ls -t ./podcasts/podcast_*.wav 2>/dev/null \
+                | grep -v '\.played' | head -n 1 || true)
+            LOCAL_ANNOUNCE=$(ls -t ./podcasts/announce_*.wav 2>/dev/null \
+                | grep -v '\.played' | head -n 1 || true)
             if [[ -n "$LOCAL_PODCAST" && -f "$LOCAL_PODCAST" ]]; then
                 rm -f "$COVER_ART"; touch "$COVER_ART"
-                [[ -n "$LOCAL_ANNOUNCE" && -f "$LOCAL_ANNOUNCE" ]] && { play_announce "$LOCAL_ANNOUNCE" || log "WARN : play_announce échoué, ignoré"; }
-                play_podcast "$LOCAL_PODCAST" || log "WARN : play_podcast échoué, ignoré"
-                rm -f "$LOCAL_PODCAST"
-                [[ -n "$LOCAL_ANNOUNCE" && -f "$LOCAL_ANNOUNCE" ]] && rm -f "$LOCAL_ANNOUNCE"
-                [[ -n "$LOCAL_TEXT"    && -f "$LOCAL_TEXT"    ]] && rm -f "$LOCAL_TEXT"
+                [[ -n "$LOCAL_ANNOUNCE" && -f "$LOCAL_ANNOUNCE" ]] && \
+                    { play_announce "$LOCAL_ANNOUNCE" || true; }
+                play_podcast "$LOCAL_PODCAST" || true
+                mark_podcast_played "$LOCAL_PODCAST"   # ← remplace les rm -f directs
                 write_status "Musique" "" "" "" "" "0" ""
             else
                 log "WARN : Aucun podcast .wav trouvé, run_podcast ignoré"
@@ -440,6 +440,22 @@ EOF
 # =============================================================================
 # LECTURE
 # =============================================================================
+
+mark_podcast_played() {
+    local file="$1"
+    touch "${file}.played-${RADIO_ROLE}"
+    
+    # Supprime si les 2 rôles ont joué
+    if [[ -f "${file}.played-local" && -f "${file}.played-public" ]]; then
+        local base="${file%.wav}"
+        rm -f "$file" "${base}.txt" "${base}.vtt" \
+              "${file}.played-local" "${file}.played-public"
+        # Annonce associée (même timestamp)
+        local ts=$(basename "$base" | sed 's/podcast_//')
+        rm -f "./podcasts/announce_${ts}.wav"
+        log "🗑️  Podcast ${ts} supprimé (joué par les 2 radios)"
+    fi
+}
 
 play_file() {
     local file="$1"
@@ -623,9 +639,13 @@ generate_podcast() {
     mv ./podcast-generator/podcast.wav "./podcasts/podcast_${ts}.wav"
     mv ./podcast-generator/podcast_text.txt "./podcasts/podcast_${ts}.txt"
     mv ./podcast-generator/podcast.vtt "./podcasts/podcast_${ts}.vtt"
-    ls -t ./podcasts/podcast_*.wav 2>/dev/null | tail -n +8 | xargs -d '\n' rm -f -- 2>/dev/null || true
-    ls -t ./podcasts/podcast_*.txt 2>/dev/null | tail -n +8 | xargs -d '\n' rm -f -- 2>/dev/null || true
-    ls -t ./podcasts/podcast_*.vtt 2>/dev/null | tail -n +8 | xargs -d '\n' rm -f -- 2>/dev/null || true
+    find ./podcasts/ -name "podcast_*.wav" -mmin +$((24*60)) | while read -r f; do
+        base="${f%.wav}"
+        old_ts=$(basename "$base" | sed 's/podcast_//')
+        rm -f "$f" "${base}.txt" "${base}.vtt" \
+            "${f}.played-local" "${f}.played-public" \
+            "./podcasts/announce_${old_ts}.wav"
+    done
     local titre_actuel=$(sed -n '2p' "./podcasts/podcast_${ts}.txt" | cut -c8-)
     generate_announce "$titre_actuel" "$ts"
     
@@ -642,11 +662,6 @@ generate_announce() {
         log "WARN : announce run.sh erreur"
         
     mv ./radio-generator/announce.wav "./podcasts/announce_${ts}.wav"
-    
-    # Nettoyage historique des annonces (garde 7)
-    ls -t ./podcasts/announce_*.wav 2>/dev/null | tail -n +8 | xargs -d '\n' rm -f -- 2>/dev/null || true
-    
-    # SURTOUT : On ne supprime PAS le .txt ici !
 }
 
 generate_forecast() {
@@ -915,9 +930,11 @@ main() {
 
     cd "$SCRIPT_DIR"
 
-    [[ -f "$NEWS_WAV"     ]] && rm -f "$NEWS_WAV"
-    [[ -f "$WEATHER_WAV"  ]] && rm -f "$WEATHER_WAV"
-    
+    if [[ "$RADIO_ROLE" == "local" ]]; then
+        [[ -f "$NEWS_WAV"    ]] && rm -f "$NEWS_WAV"
+        [[ -f "$WEATHER_WAV" ]] && rm -f "$WEATHER_WAV"
+    fi
+
     mkdir -p ./podcasts
     
     MUSIC_DIR="${MUSIC_DIR:-./music}"
