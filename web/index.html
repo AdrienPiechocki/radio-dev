@@ -328,11 +328,6 @@ h1 {
     box-shadow: 0 0 10px var(--accent);
 }
 
-/* --- Portrait mobile petit écran : masquer pochette --- */
-@media (max-height: 800px) and (orientation: portrait) {
-    .album-art { display: none; }
-}
-
 /* --- Portrait mobile --- */
 @media (max-width: 768px) and (orientation: portrait) {
     .player-card { padding: 25px; border-radius: 18px; }
@@ -353,6 +348,11 @@ h1 {
     #play-btn     { width: 60px; height: 60px; }
     .volume-container { max-width: 100%; }
     #subtitles    { font-size: 0.9rem; min-height: 2.5em; }
+}
+
+/* --- Portrait mobile petit écran : masquer pochette --- */
+@media (max-height: 800px) and (orientation: portrait) {
+    .album-art { width: 100px; height: 100px; }
 }
 
 /* --- Paysage mobile (hauteur ≤ 500px) --- */
