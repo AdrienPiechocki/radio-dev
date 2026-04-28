@@ -564,7 +564,7 @@ let baseServerNow      = 0;
 let baseLocalTime      = 0;
 let anchorServerPos    = 0;
 let anchorAudioTime    = 0;
-
+let icecastBufferDelay = 0;
 
 let STREAM_URL = '/icecast/radio-public'; // fallback par défaut
 
@@ -662,8 +662,8 @@ audio.addEventListener('playing', () => {
     //    a déjà bufferisé (l'audio n'est pas encore sorti du haut-parleur)
     anchorServerPos = serverPos - bufferedAhead;
     anchorAudioTime = audio.currentTime;
-
-    debugDiv.textContent = `buffer: ${bufferedAhead.toFixed(1)}s | serverPos: ${serverPos.toFixed(1)}s | anchor: ${anchorServerPos.toFixed(1)}s`;
+    icecastBufferDelay = bufferedAhead;
+    debugDiv.textContent = `buffer: ${bufferedAhead.toFixed(1)}s`;
 });
 
 function normalizeVtt(url) {
@@ -811,7 +811,7 @@ function animate() {
         const audioDelta = audio.currentTime - anchorAudioTime;
         currentPos = anchorServerPos + audioDelta;
     } else {
-        currentPos = (baseServerNow + elapsed) - start + ICECAST_BURST_DELAY;
+        currentPos = (baseServerNow + elapsed) - start - icecastBufferDelay;
     }
 
     currentPos = Math.max(0, Math.min(currentPos, durationRaw));
