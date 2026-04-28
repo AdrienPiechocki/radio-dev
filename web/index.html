@@ -649,12 +649,21 @@ audio.addEventListener('playing', () => {
     const activeData = displayedPodcastData || currentPodcastData;
     if (!activeData) return;
     const start = new Date(activeData.startedAt).getTime() / 1000;
+
+    // bufferedAhead = données déjà bufferisées devant la tête de lecture
     const bufferedAhead = (audio.buffered.length > 0)
         ? audio.buffered.end(audio.buffered.length - 1) - audio.currentTime
         : 0;
-    anchorServerPos = (baseServerNow + elapsed) - start - bufferedAhead;
+
+    // serverPos = où on en est côté serveur
+    const serverPos = (baseServerNow + elapsed) - start;
+
+    // ✅ Le décalage réel = position serveur moins ce que le navigateur
+    //    a déjà bufferisé (l'audio n'est pas encore sorti du haut-parleur)
+    anchorServerPos = serverPos - bufferedAhead;
     anchorAudioTime = audio.currentTime;
-    debugDiv.textContent = `buffer: ${bufferedAhead.toFixed(1)}s`;
+
+    debugDiv.textContent = `buffer: ${bufferedAhead.toFixed(1)}s | serverPos: ${serverPos.toFixed(1)}s | anchor: ${anchorServerPos.toFixed(1)}s`;
 });
 
 function normalizeVtt(url) {
