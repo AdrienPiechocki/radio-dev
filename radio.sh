@@ -489,10 +489,10 @@ mark_podcast_played() {
 play_file() {
     local file="$1"
 
-    local duration title artist album
-    local probe
-    probe=$(ffprobe -v error -show_entries format=duration:format_tags=title,artist,album \
-            -of default=noprint_wrappers=1 "$file" 2>/dev/null)
+    local duration title artist album has_video probe
+    probe=$(ffprobe -v error \
+        -show_entries format=duration:format_tags=title,artist,album \
+        -of default=noprint_wrappers=1 "$file" 2>/dev/null)
 
     duration=$(echo "$probe" | grep '^duration='   | cut -d= -f2  || true)
     title=$(echo    "$probe" | grep '^TAG:title='  | cut -d= -f2- || true)
@@ -514,8 +514,12 @@ play_file() {
         rm -f "$COVER_ART"; touch "$COVER_ART"
     fi
 
+    check_streamer
+
+    # ✅ now_iso capturé ICI, après tous les ffprobe et check_streamer
     local now_iso
     now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
     ( sleep 3 && update_icecast_metadata "$title" "$artist" "$album" ) &
     local META_PID=$!
     (while true; do
@@ -524,7 +528,6 @@ play_file() {
     done) &
     local UPDATE_PID=$!
 
-    check_streamer
     stream_to_fifo "$file" || log "WARN : stream_to_fifo échoué pour $(basename "$file")"
 
     kill "$UPDATE_PID" 2>/dev/null || true
