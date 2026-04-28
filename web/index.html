@@ -547,8 +547,7 @@ const duration = document.getElementById('duration');
 const progressFill  = document.getElementById('progress-fill');
 const coverImg      = document.getElementById('cover-img');
 
-// burst-size Icecast : 65535 octets → ~1s à 128kbps
-const ICECAST_BURST_DELAY = -(65535 * 8 / 128000);
+const ICECAST_BURST_DELAY = 0;
 
 let displayedPodcastData = null;
 let currentPodcastData = null;
@@ -650,8 +649,12 @@ audio.addEventListener('playing', () => {
     const activeData = displayedPodcastData || currentPodcastData;
     if (!activeData) return;
     const start = new Date(activeData.startedAt).getTime() / 1000;
-    anchorServerPos = (baseServerNow + elapsed) - start + ICECAST_BURST_DELAY;
+    const bufferedAhead = (audio.buffered.length > 0)
+        ? audio.buffered.end(audio.buffered.length - 1) - audio.currentTime
+        : 0;
+    anchorServerPos = (baseServerNow + elapsed) - start - bufferedAhead;
     anchorAudioTime = audio.currentTime;
+    debugDiv.textContent = `buffer: ${bufferedAhead.toFixed(1)}s`;
 });
 
 function normalizeVtt(url) {
