@@ -590,6 +590,7 @@ play_podcast() {
 
 play_announce() {
     local file_to_play="$1"
+    local vtt_file="${file_to_play%.wav}.vtt"
     log "🎙️  Annonce du podcast: $(basename "$file_to_play")"
     local duration start_iso STATUS_PID
     duration=$(ffprobe -v error -show_entries format=duration \
@@ -599,7 +600,7 @@ play_announce() {
     update_icecast_metadata "Annonce" "Chronique IA" ""
 
     (while true; do
-        write_status "Annonce" "$start_iso" "Annonce" "Chronique IA" "" "$duration" ""
+        write_status "Annonce" "$start_iso" "Annonce" "Chronique IA" "" "$duration" "$vtt_file"
         sleep 1
     done) &
     STATUS_PID=$!
@@ -694,6 +695,7 @@ generate_announce() {
         log "WARN : announce run.sh erreur"
         
     mv ./radio-generator/announce.wav "./podcasts/announce_${ts}.wav"
+    mv ./radio-generator/announce.vtt "./podcasts/announce_${ts}.vtt"
 }
 
 generate_forecast() {
