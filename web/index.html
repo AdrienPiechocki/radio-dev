@@ -564,7 +564,9 @@ let baseServerNow      = 0;
 let baseLocalTime      = 0;
 let anchorServerPos    = 0;
 let anchorAudioTime    = 0;
-let icecastBufferDelay = 0;
+// Réutilise le dernier buffer mesuré pour que la progression en pause
+// soit cohérente avec la progression après play (évite le saut au démarrage).
+let icecastBufferDelay = parseFloat(localStorage.getItem('icecastBufferDelay') || '0');
 
 let STREAM_URL = '/icecast/radio-public'; // fallback par défaut
 
@@ -663,6 +665,8 @@ audio.addEventListener('playing', () => {
     anchorServerPos = serverPos - bufferedAhead;
     anchorAudioTime = audio.currentTime;
     icecastBufferDelay = bufferedAhead;
+    // Mémorise pour que la vue en pause soit alignée dès le prochain chargement
+    if (bufferedAhead > 0) localStorage.setItem('icecastBufferDelay', bufferedAhead.toFixed(2));
     debugDiv.textContent = `buffer: ${bufferedAhead.toFixed(1)}s`;
 });
 
