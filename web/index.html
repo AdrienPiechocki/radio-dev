@@ -663,7 +663,7 @@ audio.addEventListener('playing', () => {
     anchorServerPos = serverPos - bufferedAhead;
     anchorAudioTime = audio.currentTime;
     icecastBufferDelay = bufferedAhead;
-    console.log(`buffer: ${bufferedAhead.toFixed(1)}s`);
+    debugDiv.textContent = `buffer: ${bufferedAhead.toFixed(1)}s`;
 });
 
 function normalizeVtt(url) {
@@ -812,6 +812,7 @@ function animate() {
         currentPos = anchorServerPos + audioDelta;
     } else {
         currentPos = (baseServerNow + elapsed) - start - icecastBufferDelay;
+        console.log(icecastBufferDelay);
     }
 
     currentPos = Math.max(0, Math.min(currentPos, durationRaw));
