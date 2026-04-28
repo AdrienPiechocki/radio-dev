@@ -812,7 +812,6 @@ function animate() {
         currentPos = anchorServerPos + audioDelta;
     } else {
         currentPos = (baseServerNow + elapsed) - start - icecastBufferDelay;
-        console.log(icecastBufferDelay);
     }
 
     currentPos = Math.max(0, Math.min(currentPos, durationRaw));
