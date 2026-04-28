@@ -796,7 +796,7 @@ async function fetchMetadata() {
                     cuesIndex = parseVTT(await vttRes.text());
                     hasSubtitles = true;
                 }
-            }, 0);
+            }, icecastBufferDelay);
         } else if (!data.vtt) {
             hasSubtitles = false;
             cuesIndex = [];
