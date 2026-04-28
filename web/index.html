@@ -663,7 +663,7 @@ audio.addEventListener('playing', () => {
     anchorServerPos = serverPos - bufferedAhead;
     anchorAudioTime = audio.currentTime;
     icecastBufferDelay = bufferedAhead;
-    debugDiv.textContent = `buffer: ${bufferedAhead.toFixed(1)}s`;
+    console.log(`buffer: ${bufferedAhead.toFixed(1)}s`);
 });
 
 function normalizeVtt(url) {
