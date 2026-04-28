@@ -774,6 +774,8 @@ async function fetchMetadata() {
             if (pendingTrackChange) return;
             pendingTrackChange = true;
             lastTrackTitle = data.title;
+            
+            const delay = Math.max(icecastBufferDelay, 0.5) * 1000;
 
             setTimeout(async () => {
                 pendingTrackChange = false;
@@ -794,7 +796,7 @@ async function fetchMetadata() {
                     cuesIndex = parseVTT(await vttRes.text());
                     hasSubtitles = true;
                 }
-            }, icecastBufferDelay);
+            }, delay);
         } else if (!data.vtt) {
             hasSubtitles = false;
             cuesIndex = [];
