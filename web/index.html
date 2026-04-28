@@ -777,11 +777,6 @@ async function fetchMetadata() {
             pendingTrackChange = true;
             lastTrackTitle = data.title;
 
-            const browserBuffer = (!audio.paused && audio.buffered.length > 0)
-                ? audio.buffered.end(audio.buffered.length - 1) - audio.currentTime
-                : 0;
-            const uiDelay = browserBuffer * 1000;
-
             setTimeout(async () => {
                 pendingTrackChange = false;
                 subDiv.innerHTML = "";
@@ -801,7 +796,7 @@ async function fetchMetadata() {
                     cuesIndex = parseVTT(await vttRes.text());
                     hasSubtitles = true;
                 }
-            }, uiDelay);
+            }, 0);
         } else if (!data.vtt) {
             hasSubtitles = false;
             cuesIndex = [];
