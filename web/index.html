@@ -750,11 +750,21 @@ async function fetchMetadata() {
         
         const prevVtt = normalizeVtt(currentPodcastData?.vtt);
         currentPodcastData = data;
-        baseServerNow = data.serverNow;
-        baseLocalTime = Date.now() / 1000;
+
+        // Ne mettre à jour l'ancre serveur que si la valeur avance (jamais en arrière)
+        // et uniquement si l'audio ne sert pas déjà d'ancre fiable.
+        const newLocalTime = Date.now() / 1000;
+        const projectedServerNow = baseServerNow + (newLocalTime - baseLocalTime);
+        const serverAdvanced = data.serverNow > projectedServerNow;
+        const audioIsAnchor = !audio.paused && anchorAudioTime > 0;
+
+        if (!audioIsAnchor && (baseLocalTime === 0 || serverAdvanced)) {
+            baseServerNow = data.serverNow;
+            baseLocalTime = newLocalTime;
+        }
         
         const trackChanged = data.title !== lastTrackTitle;
-        const vttChanged = normalizeVtt(data.vtt) !== normalizeVtt(currentPodcastData?.vtt);
+        const vttChanged = normalizeVtt(data.vtt) !== prevVtt; // prevVtt capturé avant l'écrasement
         
         let pendingTrackChange = false;
 
