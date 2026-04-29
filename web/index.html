@@ -754,7 +754,7 @@ async function fetchMetadata() {
         currentPodcastData = data;
 
         baseServerNow = data.serverNow;
-        baseLocalTime = newLocalTime;
+        baseLocalTime = Date.now() / 1000;
         
         const trackChanged = data.title !== lastTrackTitle;
         const vttChanged = normalizeVtt(data.vtt) !== prevVtt; // prevVtt capturé avant l'écrasement
