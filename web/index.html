@@ -222,6 +222,18 @@ h1 {
 
 #debug { display: none; }
 
+#sync-btn {
+    display: none;
+    background: transparent;
+    border: 1px solid var(--text-dim);
+    color: var(--text-dim);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+#sync-btn:hover { border-color: var(--secondary); color: var(--secondary); }
+
 /* --- Volume --- */
 .volume-container {
     display: flex;
@@ -516,6 +528,9 @@ h1 {
         </audio>
 
         <button id="play-btn" onclick="togglePlay()"></button>
+        <button id="sync-btn" onclick="syncNow()" title="Cliquer au début d'un nouveau morceau">
+            🎯 Sync
+        </button>
         <div class="volume-container">
             <span class="volume-icon">🔈</span>
             <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.5">
@@ -648,13 +663,30 @@ audio.addEventListener('playing', () => {
     clearTimeout(waitingTimeout);
     playBtn.classList.remove('loading');
     playBtn.classList.add('playing');
-    // On ne peut pas mesurer le lag ici — audio.currentTime est inutilisable sur un live
-    // La calibration se fait via les changements de titre détectés dans calibrateDelay()
-    debugDiv.textContent = `lag: ${icecastBufferDelay.toFixed(1)}s (en attente calibration...)`;
-    debugDiv.style.display = 'block';
-    calibrationSamples = [];
-    setTimeout(calibrateDelay, 2000);
+    debugDiv.textContent = `lag: ${icecastBufferDelay.toFixed(1)}s`;
 });
+
+function syncNow() {
+    // L'utilisateur clique exactement quand il entend le début d'un nouveau morceau.
+    // À cet instant, côté serveur, startedAt vient de changer depuis X secondes.
+    // Le lag = maintenant_local - startedAt_serveur_corrigé
+    const now = Date.now() / 1000;
+    const elapsed = now - baseLocalTime;
+    const data = currentPodcastData;
+    if (!data) return;
+
+    const start = new Date(data.startedAt).getTime() / 1000;
+    // serverPos = combien de secondes le serveur a joué ce morceau
+    const serverPos = (baseServerNow + elapsed) - start;
+    // Le lag = ce que le serveur a joué - ce que l'utilisateur vient d'entendre (≈ 0s = début)
+    const measuredLag = serverPos;
+
+    if (measuredLag > 0 && measuredLag < 60) {
+        icecastBufferDelay = measuredLag;
+        localStorage.setItem('icecastBufferDelay', measuredLag.toFixed(2));
+        debugDiv.textContent = `lag mesuré: ${measuredLag.toFixed(1)}s ✓`;
+    }
+}
 
 function calibrateDelay() {
     if (audio.paused) return;
@@ -804,8 +836,7 @@ async function fetchMetadata() {
             lastTitleChangeLocalTime = Date.now() / 1000;
             lastTitleChangeTitle = data.title;
 
-            const measuredLag = icecastBufferDelay > 0 ? icecastBufferDelay : 0;
-            const delay = measuredLag * 1000;
+            const delay = icecastBufferDelay * 1000;
 
             setTimeout(async () => {
                 subDiv.innerHTML = "";
