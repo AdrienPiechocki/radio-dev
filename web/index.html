@@ -565,6 +565,7 @@ let anchorAudioTime    = 0;
 // Réutilise le dernier buffer mesuré pour que la progression en pause
 // soit cohérente avec la progression après play (évite le saut au démarrage).
 let icecastBufferDelay = parseFloat(localStorage.getItem('icecastBufferDelay') || '0');
+const ICECAST_BURST_DELAY = -(65535 * 8 / 128000);
 
 let STREAM_URL = '/icecast/radio-public'; // fallback par défaut
 
@@ -652,7 +653,7 @@ audio.addEventListener('playing', () => {
 
     const secondsSinceFetch = now - activeData.fetchedAt;
     let offsetAtPlay2 = (activeData.serverNow + secondsSinceFetch) - start;
-    icecastBufferDelay = offsetAtPlay2 - offsetAtPlay + 4.1;
+    icecastBufferDelay = offsetAtPlay2 - offsetAtPlay + ICECAST_BURST_DELAY;
     console.log(icecastBufferDelay);
 
 
