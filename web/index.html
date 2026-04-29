@@ -816,8 +816,9 @@ function animate() {
     const start = new Date(activeData.startedAt).getTime() / 1000;
     const durationRaw = activeData.duration_raw || 1;
     let currentPos;
+    const ServerPos = activeData.serverNow - start;
 
-    currentPos = (baseServerNow + elapsed) - start;
+    currentPos = baseServerNow - start;
 
     // Sécurité pour ne pas dépasser la fin
     currentPos = Math.max(0, Math.min(currentPos, durationRaw));
