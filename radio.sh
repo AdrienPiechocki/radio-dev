@@ -46,20 +46,18 @@ start_streamer() {
     rm -f "$FIFO"
     mkfifo "$FIFO"
 
-    # Ouvre le fd 3 en écriture sur le FIFO (non-bloquant côté open grâce au
-    # fait que ffmpeg ouvre le FIFO en lecture juste après).
-    # On lance ffmpeg d'abord en arrière-plan, puis on ouvre le fd.
-    ffmpeg -loglevel error -re \
-        -fflags nobuffer -flags low_delay \
-        -probesize 32 -analyzeduration 0 \
-        -f mp3 -i "$FIFO" \
+    ffmpeg -loglevel error \
+        -fflags +nobuffer+flush_packets \
+        -flags +low_delay \
+        -probesize 32 \
+        -analyzeduration 0 \
+        -f mp3 -i "pipe:0" < "$FIFO" \
         -c:a copy \
         -f mp3 \
-        -ice_public 0 \
         -content_type audio/mpeg \
         "icecast://source:${ICECAST_SOURCE_PASSWORD}@${ICECAST_HOST}:${ICECAST_PORT}${ICECAST_MOUNT}" &
     FFMPEG_PID=$!
-
+    
     # Ouvre fd 3 en écriture avec timeout — si ffmpeg plante avant d'ouvrir le FIFO
     # en lecture, on ne bloque pas indéfiniment (ce qui causait les restarts en boucle).
     local waited=0
