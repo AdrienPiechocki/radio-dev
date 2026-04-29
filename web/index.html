@@ -644,48 +644,26 @@ audio.addEventListener('playing', () => {
     playBtn.classList.remove('loading');
     playBtn.classList.add('playing');
 
-    // --- AJOUTEZ / MODIFIEZ CETTE PARTIE ---
-    if (audio.buffered.length > 0) {
-        const end = audio.buffered.end(audio.buffered.length - 1);
-        // C'est ici que Chrome stocke ses 9 secondes
-        icecastBufferDelay = end - audio.currentTime; 
-        
-        // Optionnel : Si vous voulez vraiment réduire le délai (moins de retard)
-        if (icecastBufferDelay > 2) {
-            audio.currentTime = end - 1.5; // On saute vers la fin du buffer
-            icecastBufferDelay = 1.5;      // On met à jour notre variable de décalage
-        }
-    }
-    // ---------------------------------------
-
     const now = Date.now() / 1000;
-    const elapsed = now - baseLocalTime;
     const activeData = displayedPodcastData || currentPodcastData;
     if (!activeData) return;
+    
     const start = new Date(activeData.startedAt).getTime() / 1000;
 
-    // bufferedAhead = données déjà bufferisées devant la tête de lecture
-    const bufferedAhead = (audio.buffered.length > 0)
-        ? audio.buffered.end(audio.buffered.length - 1) - audio.currentTime
-        : 0;
-
-    // serverPos = où on en est côté serveur
-    const serverPos = (baseServerNow + elapsed) - start;
-
-    // ✅ Le décalage réel = position serveur moins ce que le navigateur
-    //    a déjà bufferisé (l'audio n'est pas encore sorti du haut-parleur)
-    anchorServerPos = serverPos - bufferedAhead;
-    anchorAudioTime = audio.currentTime;
-    icecastBufferDelay = bufferedAhead;
-    // Mémorise pour que la vue en pause soit alignée dès le prochain chargement
-    if (bufferedAhead > 0) localStorage.setItem('icecastBufferDelay', bufferedAhead.toFixed(2));
-    debugDiv.textContent = `buffer: ${bufferedAhead.toFixed(1)}s`;
+    // On calcule le délai réel de Chrome (le fameux retard de 9s)
     if (audio.buffered.length > 0) {
         const end = audio.buffered.end(audio.buffered.length - 1);
-        const diff = end - audio.currentTime;
-        if (diff > 2) { // Si plus de 2s de retard sur le cache
-            audio.currentTime = end - 0.5; // On saute à la fin moins 500ms
-        }
+        icecastBufferDelay = end - audio.currentTime;
+    }
+
+    // --- LA CLÉ EST ICI ---
+    // On définit l'ancre de position au moment PRÉCIS où la lecture commence.
+    // On prend le temps serveur actuel et on retire le délai de buffer.
+    anchorServerPos = (baseServerNow + (now - baseLocalTime)) - start - icecastBufferDelay;
+    anchorAudioTime = audio.currentTime;
+
+    if (icecastBufferDelay > 0) {
+        localStorage.setItem('icecastBufferDelay', icecastBufferDelay.toFixed(2));
     }
 });
 
@@ -825,7 +803,7 @@ async function fetchMetadata() {
 }
 
 function animate() {
-    const activeData = displayedPodcastData || currentPodcastData;
+const activeData = displayedPodcastData || currentPodcastData;
     if (!activeData) { requestAnimationFrame(animate); return; }
 
     const now = Date.now() / 1000;
@@ -836,12 +814,16 @@ function animate() {
     let currentPos;
 
     if (!audio.paused && anchorAudioTime > 0) {
+        // Si on lit, on suit la progression réelle de la tête de lecture
         const audioDelta = audio.currentTime - anchorAudioTime;
         currentPos = anchorServerPos + audioDelta;
     } else {
+        // En pause ou chargement, on se base sur le serveur 
+        // MAIS on retire le délai habituel pour que l'UI ne soit pas en avance
         currentPos = (baseServerNow + elapsed) - start - icecastBufferDelay;
     }
 
+    // Sécurité pour ne pas dépasser la fin
     currentPos = Math.max(0, Math.min(currentPos, durationRaw));
 
     progressFill.style.width = (currentPos / durationRaw) * 100 + "%";
