@@ -663,16 +663,8 @@ audio.addEventListener('playing', () => {
             // audio.currentTime ≈ 0 au début, donc on se base sur la position serveur
             icecastBufferDelay = freshServerPos - (audio.currentTime || 0);
             
-            anchorServerPos = freshServerPos;
-            anchorAudioTime = audio.currentTime;
-            
             console.log(`Buffer calibré : ${icecastBufferDelay.toFixed(2)}s`);
         })
-        .catch(() => {
-            // Fallback sur l'interpolation si le fetch échoue
-            anchorServerPos = serverPos;
-            anchorAudioTime = audio.currentTime;
-        });
 });
 
 function normalizeVtt(url) {
