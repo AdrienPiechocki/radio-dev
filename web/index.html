@@ -663,7 +663,6 @@ audio.addEventListener('playing', () => {
     anchorAudioTime = audio.currentTime;
 
     if (offsetAtPlay > 0) {
-        console.log(offsetAtPlay);
         localStorage.setItem('offsetAtPlay', offsetAtPlay.toFixed(2));
     }
 });
@@ -712,6 +711,7 @@ function togglePlay() {
             const start = new Date(currentPodcastData.startedAt).getTime() / 1000;
             const secondsSinceFetch = clickLocalTime - currentPodcastData.fetchedAt;
             offsetAtPlay = (currentPodcastData.serverNow + secondsSinceFetch) - start;
+            console.log(offsetAtPlay);
         }
     } else {
         audio.pause();
