@@ -668,7 +668,6 @@ audio.addEventListener('playing', () => {
             // Le buffer réel = ce que le serveur joue - ce que l'utilisateur entend
             // audio.currentTime ≈ 0 au début, donc on se base sur la position serveur
             icecastBufferDelay = freshServerPos - (audio.currentTime || 0);
-            icecastBufferDelay = Math.max(0, Math.min(icecastBufferDelay, 30)); // clamp sécurité
             
             anchorServerPos = freshServerPos - icecastBufferDelay;
             anchorAudioTime = audio.currentTime;
@@ -825,7 +824,7 @@ async function fetchMetadata() {
 }
 
 function animate() {
-const activeData = displayedPodcastData || currentPodcastData;
+    const activeData = displayedPodcastData || currentPodcastData;
     if (!activeData) { requestAnimationFrame(animate); return; }
 
     const now = Date.now() / 1000;
