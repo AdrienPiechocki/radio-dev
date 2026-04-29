@@ -846,12 +846,6 @@ function updateUI(data) {
     document.getElementById('metadata').textContent = data.event;
     lastTrackTitle = data.title;
     updateCoverArt();
-
-    if (!audio.paused) {
-        playClickTime = Date.now() / 1000;
-        const start = new Date(data.startedAt).getTime() / 1000;
-        offsetAtPlay  = data.serverNow - start;
-    }
 }
 
 function formatTime(seconds) {
