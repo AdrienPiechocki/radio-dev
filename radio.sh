@@ -47,7 +47,7 @@ start_streamer() {
     rm -f "$FIFO"
     mkfifo "$FIFO"
 
-    # On lance ffmpeg en lui disant explicitement de ne pas bufferiser
+    # Lancement de ffmpeg avec les flags de latence zéro
     ffmpeg -loglevel error \
         -fflags +nobuffer+flush_packets \
         -flags +low_delay \
@@ -62,15 +62,12 @@ start_streamer() {
     
     FFMPEG_PID=$!
 
-    # ASTUCE : On ouvre le FD 3 en mode lecture/écriture ( +> ) 
-    # Cela évite le blocage et maintient le pipe ouvert même si ffmpeg redémarre.
-    log "🔌 Ouverture du descripteur de fichier..."
-    exec 3+>"$FIFO" 
+    # OUVERTURE DU FD 3 (Correction de la syntaxe)
+    exec 3<>"$FIFO" 
 
-    # Vérification rapide que ffmpeg n'a pas crashé au lancement
     sleep 1
     if ! kill -0 "$FFMPEG_PID" 2>/dev/null; then
-        log "❌ ffmpeg a échoué au démarrage. Vérifie tes identifiants Icecast."
+        log "❌ ffmpeg a échoué. Vérifie la connexion Icecast."
         return 1
     fi
 
