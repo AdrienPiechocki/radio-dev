@@ -547,8 +547,8 @@ const duration = document.getElementById('duration');
 const progressFill  = document.getElementById('progress-fill');
 const coverImg      = document.getElementById('cover-img');
 
-let displayedPodcastData = null;
-let currentPodcastData = null;
+let displayedData = null;
+let currentData = null;
 let cuesIndex          = [];
 let hasSubtitles       = false;
 let lastTrackTitle     = "";
@@ -645,7 +645,7 @@ audio.addEventListener('playing', () => {
     playBtn.classList.add('playing');
 
     const now = Date.now() / 1000;
-    const activeData = displayedPodcastData || currentPodcastData;
+    const activeData = displayedData || currentData;
     if (!activeData) return;
     
     const start = new Date(activeData.startedAt).getTime() / 1000;
@@ -705,12 +705,12 @@ function togglePlay() {
         playBtn.classList.remove('playing');
         playBtn.classList.add('loading');
 
-        if (currentPodcastData) {
+        if (currentData) {
             const clickLocalTime = Date.now() / 1000;
             playClickTime = clickLocalTime;
-            const start = new Date(currentPodcastData.startedAt).getTime() / 1000;
-            const secondsSinceFetch = clickLocalTime - currentPodcastData.fetchedAt;
-            offsetAtPlay = (currentPodcastData.serverNow + secondsSinceFetch) - start;
+            const start = new Date(currentData.startedAt).getTime() / 1000;
+            const secondsSinceFetch = clickLocalTime - currentData.fetchedAt;
+            offsetAtPlay = (currentData.serverNow + secondsSinceFetch) - start;
         }
     } else {
         audio.pause();
@@ -749,8 +749,8 @@ async function fetchMetadata() {
         const data = await res.json();
         data.fetchedAt = Date.now() / 1000;
         
-        const prevVtt = normalizeVtt(currentPodcastData?.vtt);
-        currentPodcastData = data;
+        const prevVtt = normalizeVtt(currentData?.vtt);
+        currentData = data;
 
         const newLocalTime = Date.now() / 1000;
         const projectedServerNow = baseServerNow + (newLocalTime - baseLocalTime);
@@ -780,11 +780,11 @@ async function fetchMetadata() {
                 cuesIndex = [];
                 hasSubtitles = false;
                 
-                const isNewShow = data.event !== displayedPodcastData?.event;
+                const isNewShow = data.event !== displayedData?.event;
                 if (isNewShow && (audio.paused || audio.ended)) {
                     audio.src = STREAM_URL + '?t=' + Date.now();
                 }
-                displayedPodcastData = data;
+                displayedData = data;
                 updateUI(data);
                 anchorAudioTime = 0;
 
@@ -803,7 +803,7 @@ async function fetchMetadata() {
 }
 
 function animate() {
-const activeData = displayedPodcastData || currentPodcastData;
+const activeData = displayedData || currentData;
     if (!activeData) { requestAnimationFrame(animate); return; }
 
     const now = Date.now() / 1000;
@@ -826,7 +826,7 @@ const activeData = displayedPodcastData || currentPodcastData;
         const currentCue = cuesIndex.find(cue => currentPos >= cue.start && currentPos <= cue.end);
         const newText = currentCue ? currentCue.text : "";
         if (subDiv.innerHTML !== newText) subDiv.innerHTML = newText;
-    } else if (!hasSubtitles || displayedPodcastData?.event === "Musique") {
+    } else if (!hasSubtitles || displayedData?.event === "Musique") {
         const durationRaw = activeData?.duration_raw || 0;
         if (currentPos >= durationRaw || audio.paused) {
             if (subDiv.innerHTML !== "") {
@@ -869,7 +869,7 @@ async function start() {
     const data = await res.json();
     data.fetchedAt = Date.now() / 1000;
     updateUI(data);
-    displayedPodcastData = data;
+    displayedData = data;
 }
 
 setInterval(fetchMetadata, 1000);
