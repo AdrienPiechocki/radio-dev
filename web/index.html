@@ -817,7 +817,7 @@ function animate() {
     const durationRaw = activeData.duration_raw || 1;
     let currentPos;
     const ServerPos = activeData.serverNow - start;
-    icecastBufferDelay = ServerPos - (audio.currentTime || 0);
+    icecastBufferDelay = ServerPos;
 
     currentPos = icecastBufferDelay;
     
