@@ -725,10 +725,6 @@ audio.addEventListener('playing', () => {
     playBtn.classList.remove('loading');
     playBtn.classList.add('playing');
     renderDebug(`lag: ${lag.toFixed(1)}s`);
-    // L'audio sort réellement — on peut mesurer le lag maintenant
-    if (currentData?.startedAt) {
-        startAutoSync(new Date(currentData.startedAt).getTime() / 1000);
-    }
 });
 
 function reconnectAudio() {
