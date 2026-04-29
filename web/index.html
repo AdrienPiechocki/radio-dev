@@ -702,14 +702,7 @@ function togglePlay() {
         audio.load();
         audio.src = STREAM_URL + '?t=' + Date.now();
         audio.volume = currentVolume;
-        audio.play().then(() => {
-            if (audio.buffered.length > 0) {
-                const end = audio.buffered.end(audio.buffered.length - 1);
-                if (end - audio.currentTime > 1) { // Si plus de 1s de retard
-                    audio.currentTime = end; // Saut au direct
-                }
-            }
-        });
+        audio.play();
         playBtn.classList.remove('playing');
         playBtn.classList.add('loading');
 
