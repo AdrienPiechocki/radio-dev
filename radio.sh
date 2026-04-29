@@ -59,6 +59,7 @@ start_streamer() {
         -ice_description "Ma radio IA" \
         -content_type audio/mpeg \
         -f mp3 \
+        -flush_packets 1 \
         "icecast://source:${ICECAST_SOURCE_PASSWORD}@${ICECAST_HOST}:${ICECAST_PORT}${ICECAST_MOUNT}" \
         -loglevel error &
     FFMPEG_PID=$!
