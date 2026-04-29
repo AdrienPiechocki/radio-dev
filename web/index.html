@@ -743,10 +743,6 @@ function togglePlay() {
         reconnectAudio();
         playBtn.classList.remove('playing');
         playBtn.classList.add('loading');
-        // Auto-sync dès le play : startedAt est la référence zéro du morceau en cours
-        if (currentData?.startedAt) {
-            startAutoSync(new Date(currentData.startedAt).getTime() / 1000);
-        }
     } else {
         audio.pause();
         playBtn.classList.remove('playing');
