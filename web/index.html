@@ -650,12 +650,11 @@ audio.addEventListener('playing', () => {
     
     const start = new Date(activeData.startedAt).getTime() / 1000;
 
-    // On calcule le délai réel de Chrome (le fameux retard de 9s)
-    if (audio.buffered.length > 0) {
-        const end = audio.buffered.end(audio.buffered.length - 1);
-        icecastBufferDelay = offsetAtPlay - end;
-        console.log(icecastBufferDelay, offsetAtPlay, end);
-    }
+    const secondsSinceFetch = now - activeData.fetchedAt;
+    let offsetAtPlay2 = (activeData.serverNow + secondsSinceFetch) - start;
+    icecastBufferDelay = offsetAtPlay - offsetAtPlay2;
+    console.log(icecastBufferDelay, offsetAtPlay, offsetAtPlay2);
+
 
     // --- LA CLÉ EST ICI ---
     // On définit l'ancre de position au moment PRÉCIS où la lecture commence.
