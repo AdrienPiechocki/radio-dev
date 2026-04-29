@@ -653,6 +653,10 @@ audio.addEventListener('waiting', () => {
                     .finally(() => {
                         isRetrying = false;
                     });
+                const clickLocalTime = Date.now() / 1000;
+                const start = new Date(currentData.startedAt).getTime() / 1000;
+                const secondsSinceFetch = clickLocalTime - currentData.fetchedAt;
+                offset = (currentData.serverNow + secondsSinceFetch) - start;
             }
         }, 5000);
     }
@@ -672,7 +676,7 @@ audio.addEventListener('playing', () => {
     const secondsSinceFetch = now - activeData.fetchedAt;
     let offset_now = (activeData.serverNow + secondsSinceFetch) - start;
     icecastBufferDelay = offset_now - offset + ICECAST_BURST_DELAY;
-    console.log(icecastBufferDelay);
+    //console.log(icecastBufferDelay);
 
     if (icecastBufferDelay > 0) {
         localStorage.setItem('icecastBufferDelay', icecastBufferDelay.toFixed(2));
