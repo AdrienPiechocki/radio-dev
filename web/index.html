@@ -670,6 +670,12 @@ audio.addEventListener('playing', () => {
     if (icecastBufferDelay > 0) {
         localStorage.setItem('icecastBufferDelay', icecastBufferDelay.toFixed(2));
     }
+    console.log('currentTime:', audio.currentTime);
+    console.log('buffered.end:', audio.buffered.length > 0 ? audio.buffered.end(audio.buffered.length - 1) : 'N/A');
+    console.log('icecastBufferDelay calculé:', icecastBufferDelay);
+    console.log('baseServerNow:', baseServerNow);
+    console.log('baseLocalTime:', baseLocalTime);
+    console.log('anchorServerPos:', anchorServerPos);
 });
 
 function normalizeVtt(url) {
