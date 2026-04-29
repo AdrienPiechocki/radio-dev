@@ -818,8 +818,8 @@ function animate() {
     let currentPos;
     const ServerPos = activeData.serverNow - start;
 
-    currentPos = ServerPos + (audio.currentTime || 0);
-    icecastBufferDelay = currentPos
+    currentPos = icecastBufferDelay;
+    icecastBufferDelay = ServerPos + (audio.currentTime || 0)
     // Sécurité pour ne pas dépasser la fin
     currentPos = Math.max(0, Math.min(currentPos, durationRaw));
 
