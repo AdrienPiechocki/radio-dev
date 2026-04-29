@@ -889,15 +889,40 @@ function updateVolume() {
 updateVolume();
 volumeSlider.addEventListener('input', updateVolume);
 
-async function start() {
-    await detectStream();
-    fetchMetadata();
-    animate();
+async function measureInitialLag() {
+    const t0 = Date.now() / 1000;
     const res = await fetch(getStatusUrl() + '?t=' + Date.now());
     const data = await res.json();
+    const t1 = Date.now() / 1000;
+
+    // serverNow est l'heure serveur au moment de l'écriture du JSON
+    // On estime l'heure serveur actuelle = serverNow + demi-RTT
+    const rtt = t1 - t0;
+    const estimatedServerNow = data.serverNow + rtt / 2;
+
+    // Ce que le serveur diffuse en ce moment
+    const start = new Date(data.startedAt).getTime() / 1000;
+    const serverPos = estimatedServerNow - start;
+
+    // L'audio que l'utilisateur entend correspond à serverPos - lag secondes.
+    // On ne connaît pas encore le lag, mais on peut au moins initialiser
+    // baseServerNow et baseLocalTime proprement.
+    baseServerNow = estimatedServerNow;
+    baseLocalTime = t1;
+
+    return data;
+}
+
+async function start() {
+    await detectStream();
+    const data = await measureInitialLag();
     data.fetchedAt = Date.now() / 1000;
-    updateUI(data);
+    currentPodcastData = data;
     displayedPodcastData = data;
+    updateUI(data);
+    fetchMetadata();
+    animate();
+    debugDiv.textContent = `lag: ${icecastBufferDelay.toFixed(1)}s (en attente changement de piste...)`;
 }
 
 setInterval(fetchMetadata, 1000);
