@@ -489,6 +489,9 @@ mark_podcast_played() {
 
 play_file() {
     local file="$1"
+    
+    local now_iso
+    now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
     local duration title artist album has_video probe
     probe=$(ffprobe -v error \
@@ -516,10 +519,6 @@ play_file() {
     fi
 
     check_streamer
-
-    # ✅ now_iso capturé ICI, après tous les ffprobe et check_streamer
-    local now_iso
-    now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
     ( sleep 3 && update_icecast_metadata "$title" "$artist" "$album" ) &
     local META_PID=$!

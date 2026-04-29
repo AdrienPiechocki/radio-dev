@@ -564,8 +564,7 @@ let anchorServerPos    = 0;
 let anchorAudioTime    = 0;
 // Réutilise le dernier buffer mesuré pour que la progression en pause
 // soit cohérente avec la progression après play (évite le saut au démarrage).
-let icecastBufferDelay = parseFloat(localStorage.getItem('icecastBufferDelay') || '0');
-
+let icecastBufferDelay = 0;
 let STREAM_URL = '/icecast/radio-public'; // fallback par défaut
 
 async function detectStream() {
@@ -639,32 +638,48 @@ audio.addEventListener('waiting', () => {
     }
 });
 
+let bufferCalibrated = false;
+
 audio.addEventListener('playing', () => {
     clearTimeout(waitingTimeout);
     playBtn.classList.remove('loading');
     playBtn.classList.add('playing');
 
-    const now = Date.now() / 1000;
     const activeData = displayedPodcastData || currentPodcastData;
     if (!activeData) return;
-    
+
     const start = new Date(activeData.startedAt).getTime() / 1000;
-
-    // On calcule le délai réel de Chrome (le fameux retard de 9s)
-    if (audio.buffered.length > 0) {
-        const end = audio.buffered.end(audio.buffered.length - 1);
-        icecastBufferDelay = end - audio.currentTime;
-    }
-
-    // --- LA CLÉ EST ICI ---
-    // On définit l'ancre de position au moment PRÉCIS où la lecture commence.
-    // On prend le temps serveur actuel et on retire le délai de buffer.
-    anchorServerPos = (baseServerNow + (now - baseLocalTime)) - start - icecastBufferDelay;
-    anchorAudioTime = audio.currentTime;
-
-    if (icecastBufferDelay > 0) {
-        localStorage.setItem('icecastBufferDelay', icecastBufferDelay.toFixed(2));
-    }
+    const localNow = Date.now() / 1000;
+    
+    // serverNow interpolé depuis le dernier fetch
+    const interpolatedServerNow = baseServerNow + (localNow - baseLocalTime);
+    
+    // Position que le serveur pense jouer maintenant
+    const serverPos = interpolatedServerNow - start;
+    
+    // CALIBRATION : on recharge le statut pour avoir un serverNow frais
+    fetch(getStatusUrl() + '?t=' + Date.now())
+        .then(r => r.json())
+        .then(freshData => {
+            const fetchEnd = Date.now() / 1000;
+            // serverNow frais, compensé du demi-RTT
+            const freshServerPos = freshData.serverNow - new Date(freshData.startedAt).getTime() / 1000;
+            
+            // Le buffer réel = ce que le serveur joue - ce que l'utilisateur entend
+            // audio.currentTime ≈ 0 au début, donc on se base sur la position serveur
+            icecastBufferDelay = freshServerPos - (audio.currentTime || 0);
+            icecastBufferDelay = Math.max(0, Math.min(icecastBufferDelay, 30)); // clamp sécurité
+            
+            anchorServerPos = freshServerPos - icecastBufferDelay;
+            anchorAudioTime = audio.currentTime;
+            
+            console.log(`Buffer calibré : ${icecastBufferDelay.toFixed(2)}s`);
+        })
+        .catch(() => {
+            // Fallback sur l'interpolation si le fetch échoue
+            anchorServerPos = serverPos - icecastBufferDelay;
+            anchorAudioTime = audio.currentTime;
+        });
 });
 
 function normalizeVtt(url) {
