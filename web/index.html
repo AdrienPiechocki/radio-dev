@@ -817,8 +817,8 @@ function animate() {
     const durationRaw = activeData.duration_raw || 1;
     let currentPos;
 
-    currentPos = (baseServerNow + elapsed) - start;
-    console.log(currentPos);
+    currentPos = (baseServerNow + elapsed) - start + ((baseServerNow + elapsed) - start-icecastBufferDelay);
+    
     // Sécurité pour ne pas dépasser la fin
     currentPos = Math.max(0, Math.min(currentPos, durationRaw));
 
