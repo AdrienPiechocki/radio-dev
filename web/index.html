@@ -725,16 +725,9 @@ audio.addEventListener('playing', () => {
     playBtn.classList.remove('loading');
     playBtn.classList.add('playing');
     renderDebug(`lag: ${lag.toFixed(1)}s`);
-    // Auto-sync uniquement si le morceau vient de commencer côté serveur
-    // (moins de 30s écoulées), sinon on attend le prochain changement de titre.
+    // L'audio sort réellement — on peut mesurer le lag maintenant
     if (currentData?.startedAt) {
-        const startedAt = new Date(currentData.startedAt).getTime() / 1000;
-        const serverPos = serverNow() - startedAt;
-        if (serverPos < 30) {
-            startAutoSync(startedAt);
-        } else {
-            renderDebug(`lag: ${lag.toFixed(1)}s (sync au prochain morceau)`);
-        }
+        startAutoSync(new Date(currentData.startedAt).getTime() / 1000);
     }
 });
 
@@ -848,6 +841,14 @@ function applyAutoSync() {
     if (autoSyncSamples.length === 0) return;
     const sorted = [...autoSyncSamples].sort((a, b) => a - b);
     const median = sorted[Math.floor(sorted.length / 2)];
+
+    // N'appliquer que si la mesure est cohérente avec ce qu'on sait déjà
+    // (on tolère un écart de 30s par rapport à la valeur en cache)
+    if (lag > 0 && Math.abs(median - lag) > 30) {
+        renderDebug(`auto-sync ignoré: ${median.toFixed(1)}s trop différent du cache (${lag.toFixed(1)}s)`);
+        return;
+    }
+
     lag = median;
     localStorage.setItem('icecastLag', lag.toFixed(2));
     syncBtn.textContent = `🎯 ${lag.toFixed(1)}s`;
