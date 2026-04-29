@@ -653,8 +653,8 @@ audio.addEventListener('playing', () => {
     // On calcule le délai réel de Chrome (le fameux retard de 9s)
     if (audio.buffered.length > 0) {
         const end = audio.buffered.end(audio.buffered.length - 1);
-        icecastBufferDelay = offsetAtPlay - audio.currentTime;
-        console.log(icecastBufferDelay, offsetAtPlay, audio.currentTime);
+        icecastBufferDelay = offsetAtPlay - end;
+        console.log(icecastBufferDelay, offsetAtPlay, end);
     }
 
     // --- LA CLÉ EST ICI ---
