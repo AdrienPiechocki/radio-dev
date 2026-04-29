@@ -645,37 +645,53 @@ audio.addEventListener('playing', () => {
     playBtn.classList.remove('loading');
     playBtn.classList.add('playing');
 
-    const now = Date.now() / 1000;
-    const activeData = displayedPodcastData || currentPodcastData;
-    if (!activeData) return;
-    
-    const start = new Date(activeData.startedAt).getTime() / 1000;
-
-    if (audio.buffered.length > 0) {
-        const end = audio.buffered.end(audio.buffered.length - 1);
-        icecastBufferDelay = end - audio.currentTime;
-    }
-
     if (pausedServerPos !== null) {
-        // Reprise après pause : on repart de la position sauvegardée
-        // L'audio repart de 0 (nouveau flux), donc on ancre dessus
+        // Reprise après pause : on fige sur la position sauvegardée, pas besoin de recalibrer
         anchorServerPos = pausedServerPos;
+        anchorAudioTime = audio.currentTime;
         pausedServerPos = null;
-    } else {
-        // Premier play : calibration normale
-        anchorServerPos = (baseServerNow + (now - baseLocalTime)) - start - icecastBufferDelay;
+        return;
     }
-    anchorAudioTime = audio.currentTime;
 
-    if (icecastBufferDelay > 0) {
-        localStorage.setItem('icecastBufferDelay', icecastBufferDelay.toFixed(2));
-    }
-    console.log('currentTime:', audio.currentTime);
-    console.log('buffered.end:', audio.buffered.length > 0 ? audio.buffered.end(audio.buffered.length - 1) : 'N/A');
-    console.log('icecastBufferDelay calculé:', icecastBufferDelay);
-    console.log('baseServerNow:', baseServerNow);
-    console.log('baseLocalTime:', baseLocalTime);
-    console.log('anchorServerPos:', anchorServerPos);
+    // Premier play : fetch frais pour calibrer le vrai retard réseau
+    fetch(getStatusUrl() + '?t=' + Date.now())
+        .then(r => r.json())
+        .then(freshData => {
+            const activeData = displayedPodcastData || currentPodcastData;
+            if (!freshData.startedAt || !activeData) return;
+
+            const start = new Date(freshData.startedAt).getTime() / 1000;
+
+            // Position où le SERVEUR en est dans le morceau maintenant
+            const serverPos = freshData.serverNow - start;
+
+            // Position où L'AUDIO en est maintenant
+            const audioPos = audio.currentTime;
+
+            // Le vrai retard = ce que le serveur joue - ce que l'auditeur entend
+            icecastBufferDelay = serverPos - audioPos;
+            icecastBufferDelay = Math.max(0, Math.min(icecastBufferDelay, 60));
+
+            // Mettre à jour baseServer depuis la donnée fraîche
+            baseServerNow = freshData.serverNow;
+            baseLocalTime = Date.now() / 1000;
+
+            // Ancrer : l'UI doit afficher audioPos (= serverPos - delay)
+            anchorServerPos = audioPos;
+            anchorAudioTime = audio.currentTime;
+
+            localStorage.setItem('icecastBufferDelay', icecastBufferDelay.toFixed(2));
+            console.log('Retard calibre:', icecastBufferDelay.toFixed(2) + 's | serverPos:', serverPos.toFixed(2) + 's | audioPos:', audioPos.toFixed(2) + 's');
+        })
+        .catch(() => {
+            // Fallback si le fetch echoue
+            const activeData = displayedPodcastData || currentPodcastData;
+            if (!activeData) return;
+            const start = new Date(activeData.startedAt).getTime() / 1000;
+            const now = Date.now() / 1000;
+            anchorServerPos = (baseServerNow + (now - baseLocalTime)) - start - icecastBufferDelay;
+            anchorAudioTime = audio.currentTime;
+        });
 });
 
 function normalizeVtt(url) {
@@ -843,16 +859,23 @@ const activeData = displayedPodcastData || currentPodcastData;
     let currentPos;
 
     if (!audio.paused && anchorAudioTime > 0) {
-        // Lecture active : on suit la tête de lecture audio
+        // Lecture active : on suit la tête de lecture audio (ancre calibrée)
         const audioDelta = audio.currentTime - anchorAudioTime;
         currentPos = anchorServerPos + audioDelta;
     } else if (pausedServerPos !== null) {
-        // Entre la pause et le re-play (chargement) : on fige sur la position sauvegardée
+        // Entre pause et re-play (chargement) : on fige sur la position sauvegardée
         currentPos = pausedServerPos;
+    } else if (!audio.paused && anchorAudioTime === 0) {
+        // En cours de calibration (fetch frais pas encore revenu) : on suit audio.currentTime
+        // anchorServerPos n'est pas encore fiable, mais audio.currentTime avance correctement
+        // On utilise la dernière anchorServerPos connue + delta audio pour éviter le saut
+        const audioDelta = audio.currentTime - (anchorAudioTime || 0);
+        currentPos = anchorServerPos + audioDelta;
     } else {
-        // En pause ou chargement, on se base sur le serveur 
-        // MAIS on retire le délai habituel pour que l'UI ne soit pas en avance
-        currentPos = (baseServerNow + elapsed) - start - icecastBufferDelay;
+        // En pause : on fige sur la dernière position connue ou estimation serveur
+        currentPos = anchorServerPos > 0
+            ? anchorServerPos
+            : (baseServerNow + elapsed) - start - icecastBufferDelay;
     }
 
     // Sécurité pour ne pas dépasser la fin
