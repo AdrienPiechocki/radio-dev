@@ -43,25 +43,24 @@ log() { echo "[$(date '+%H:%M:%S %Z')] $*"; }
 # =============================================================================
 
 start_streamer() {
-    log "🚀 Préparation du streamer (Latence Zéro)..."
+    log "🚀 Démarrage du streamer (Mode Linéaire Forcé)..."
     rm -f "$FIFO"
     mkfifo "$FIFO"
 
-    # On ouvre le descripteur 3 en mode lecture/écriture
+    # On ouvre le descripteur 3 en mode lecture/écriture pour éviter le blocage
     exec 3<>"$FIFO"
 
-    # Lancement de ffmpeg
-    # -err_detect ignore_err : ignore les erreurs de frame au début
-    # -fflags +nobuffer+flush_packets : envoi immédiat
-    # -id3v2_read_confirm 0 : ne cherche pas les tags ID3 au début
+    # Utilisation de pipe:0 avec désactivation explicite de l'analyse
     ffmpeg -loglevel error \
-        -fflags +nobuffer+flush_packets+discardcorrupt \
-        -flags +low_delay \
+        -f mp3 \
         -probesize 32 \
         -analyzeduration 0 \
-        -f mp3 -i pipe:0 \
+        -i pipe:0 \
+        -fflags +nobuffer+flush_packets+discardcorrupt \
+        -flags +low_delay \
         -c:a copy \
         -f mp3 \
+        -ice_public 0 \
         -content_type audio/mpeg \
         "icecast://source:${ICECAST_SOURCE_PASSWORD}@${ICECAST_HOST}:${ICECAST_PORT}${ICECAST_MOUNT}" <&3 &
     
