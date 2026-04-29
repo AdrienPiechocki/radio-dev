@@ -49,19 +49,15 @@ start_streamer() {
     # Ouvre le fd 3 en écriture sur le FIFO (non-bloquant côté open grâce au
     # fait que ffmpeg ouvre le FIFO en lecture juste après).
     # On lance ffmpeg d'abord en arrière-plan, puis on ouvre le fd.
-    ffmpeg \
-        -hide_banner -nostdin \
-        -re \
-        -f s16le -ar 44100 -ac 2 -channel_layout stereo \
-        -i "$FIFO" \
-        -codec:a libmp3lame -b:a 128k -ar 44100 \
-        -ice_name "Radio Locale" \
-        -ice_description "Ma radio IA" \
-        -content_type audio/mpeg \
+    ffmpeg -loglevel error -re \
+        -fflags nobuffer -flags low_delay \
+        -probesize 32 -analyzeduration 0 \
+        -f mp3 -i "$FIFO" \
+        -c:a copy \
         -f mp3 \
-        -flush_packets 1 \
-        "icecast://source:${ICECAST_SOURCE_PASSWORD}@${ICECAST_HOST}:${ICECAST_PORT}${ICECAST_MOUNT}" \
-        -loglevel error &
+        -ice_public 0 \
+        -content_type audio/mpeg \
+        "icecast://source:${ICECAST_SOURCE_PASSWORD}@${ICECAST_HOST}:${ICECAST_PORT}${ICECAST_MOUNT}" &
     FFMPEG_PID=$!
 
     # Ouvre fd 3 en écriture avec timeout — si ffmpeg plante avant d'ouvrir le FIFO
