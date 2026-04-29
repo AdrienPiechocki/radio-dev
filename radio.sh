@@ -566,7 +566,7 @@ play_next_track() {
 }
 play_podcast() {
     local file_to_play="$1"
-    local vtt_file="${file_to_play%.wav}.vtt"
+    local vtt_file="${file_to_play%.wav}?t=$(date +%s).vtt"
     log "🎙️  Diffusion du podcast : $(basename "$file_to_play")"
     
     local duration start_iso STATUS_PID
@@ -590,7 +590,7 @@ play_podcast() {
 
 play_announce() {
     local file_to_play="$1"
-    local vtt_file="${file_to_play%.wav}.vtt"
+    local vtt_file="${file_to_play%.wav}?t=$(date +%s).vtt"
     log "🎙️  Annonce du podcast: $(basename "$file_to_play")"
     local duration start_iso STATUS_PID
     duration=$(ffprobe -v error -show_entries format=duration \
