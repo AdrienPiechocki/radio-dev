@@ -670,7 +670,7 @@ audio.addEventListener('playing', () => {
 
             // Le vrai retard = ce que le serveur joue - ce que l'auditeur entend
             icecastBufferDelay = serverPos - audioPos;
-            icecastBufferDelay = Math.max(0, icecastBufferDelay, 60);
+            icecastBufferDelay = Math.max(0, Math.min(icecastBufferDelay, 60));
 
             // Mettre à jour baseServer depuis la donnée fraîche
             baseServerNow = freshData.serverNow;
