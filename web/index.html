@@ -631,26 +631,35 @@ audio.addEventListener('error', (e) => {
 let waitingTimeout = null;
 
 audio.addEventListener('waiting', () => {
-    if (delta > 3) return; // laisse le resync faire le taf
     if (!audio.paused) {
+
+        let delta = 0;
+
+        if (audio.buffered.length > 0) {
+            const end = audio.buffered.end(audio.buffered.length - 1);
+            delta = end - audio.currentTime;
+        }
+
+        // 🔑 si on est juste en retard → on laisse forceLiveEdge gérer
+        if (delta > 3) return;
+
         playBtn.classList.add('loading');
         playBtn.classList.remove('playing');
 
         waitingTimeout = setTimeout(() => {
             if (!audio.paused && playBtn.classList.contains('loading')) {
                 console.log("Reconnexion du flux...");
+
                 const vol = audio.volume;
-                if (audio.networkState === 3) {
-                    audio.src = STREAM_URL;
-                    audio.load();
-                }
+                audio.src = STREAM_URL;
+                audio.load();
                 audio.volume = vol;
                 audio.play().catch(err => {
                     console.error("Échec de la reprise auto:", err);
                     playBtn.classList.remove('playing', 'loading');
                 });
             }
-        }, 5000); 
+        }, 5000);
     }
 });
 
