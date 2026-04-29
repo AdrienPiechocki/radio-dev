@@ -220,14 +220,7 @@ h1 {
     padding-top: 20px;
 }
 
-#debug {
-    display: none;
-    font-size: 0.7rem;
-    color: var(--text-dim);
-    text-align: center;
-    margin-top: 8px;
-    font-family: monospace;
-}
+#debug { display: none; }
 
 #sync-btn {
     display: none;
@@ -557,158 +550,112 @@ h1 {
 </div>
 
 <script>
-// =============================================================================
-// ÉLÉMENTS DOM
-// =============================================================================
-const audio             = document.getElementById('radio-audio');
-const subDiv            = document.getElementById('subtitles');
-const debugDiv          = document.getElementById('debug');
-const playBtn           = document.getElementById('play-btn');
-const syncBtn           = document.getElementById('sync-btn');
-const albumEl           = document.getElementById('track-album');
-const artistEl          = document.getElementById('track-artist');
-const titleEl           = document.getElementById('track-title');
-const timeEl            = document.getElementById('current-time');
-const durationEl        = document.getElementById('duration');
-const progressFill      = document.getElementById('progress-fill');
-const coverImg          = document.getElementById('cover-img');
-const coverEmoji        = document.getElementById('cover-emoji');
-const albumArtContainer = document.getElementById('album-art-container');
+const audio    = document.getElementById('radio-audio');
+const subDiv   = document.getElementById('subtitles');
+const debugDiv = document.getElementById('debug');
+const playBtn  = document.getElementById('play-btn');
+const album    = document.getElementById('track-album');
+const artist   = document.getElementById('track-artist');
+const title    = document.getElementById('track-title');
+const time     = document.getElementById('current-time');
+const duration = document.getElementById('duration');
+const progressFill  = document.getElementById('progress-fill');
+const coverImg      = document.getElementById('cover-img');
 
-// =============================================================================
-// ÉTAT
-// =============================================================================
+let displayedPodcastData = null;
+let currentPodcastData = null;
+let cuesIndex          = [];
+let hasSubtitles       = false;
+let lastTrackTitle     = "";
+let isFetching         = false;
+let lastCoverUrl       = "";
 
-// Horloge serveur : à tout moment, l'heure serveur estimée est :
-//   baseServerNow + (Date.now()/1000 - baseLocalTime)
-let baseServerNow = 0;
-let baseLocalTime = 0;
+let serverStartTime    = 0; 
+let playClickTime      = 0; 
+let offsetAtPlay       = 0; 
+let baseServerNow      = 0;
+let baseLocalTime      = 0;
+let anchorServerPos    = 0;
+let anchorAudioTime    = 0;
+// Réutilise le dernier buffer mesuré pour que la progression en pause
+// soit cohérente avec la progression après play (évite le saut au démarrage).
+const cachedLag = parseFloat(localStorage.getItem('icecastBufferDelay') || '0');
+let icecastBufferDelay = (cachedLag > 0 && cachedLag < 30) ? cachedLag : 0;
+let lagAtPlayStart     = 0;
+let calibrationSamples = [];
+let lastTitleChangeLocalTime = 0;
+let lastTitleChangeTitle = "";
 
-// Lag de transit Paris→client (réseau + buffer Icecast + buffer navigateur).
-// Seule source de vérité : le bouton Sync ou le localStorage.
-const _cached = parseFloat(localStorage.getItem('icecastLag') || '0');
-let lag = (_cached > 0 && _cached < 60) ? _cached : 0;
+let STREAM_URL = '/icecast/radio-public'; // fallback par défaut
 
-// Métadonnées
-let currentData   = null;  // dernière donnée reçue du serveur
-let displayedData = null;  // donnée actuellement affichée dans l'UI
-let lastTitle     = '';
-let isFetching    = false;
-
-// VTT / sous-titres
-let cues        = [];
-let hasSubtitles = false;
-
-// Reconnexion audio
-let waitingTimeout = null;
-
-// URL du flux, détectée au démarrage
-let STREAM_URL = '/icecast/radio-public';
-
-// =============================================================================
-// DÉTECTION DU FLUX
-// =============================================================================
-
-function detectStream() {
+async function detectStream() {
     const localHosts = ['192.168.1.20', 'radio-local.adrien-dev.fr'];
-    STREAM_URL = localHosts.includes(window.location.hostname)
-        ? '/icecast/radio-local'
-        : '/icecast/radio-public';
+    if (localHosts.includes(window.location.hostname)) {
+        STREAM_URL = '/icecast/radio-local';
+    } else {
+        STREAM_URL = '/icecast/radio-public';
+    }
     audio.src = STREAM_URL;
-    console.log('Stream :', STREAM_URL);
+    console.log('Stream sélectionné :', STREAM_URL);
 }
 
 function getStatusUrl() {
-    return STREAM_URL.includes('radio-local')
-        ? '/data/status-radio-local.json'
-        : '/data/status-radio-public.json';
+    if (STREAM_URL.includes('radio-local')) {
+        return '/data/status-radio-local.json';
+    }
+    return '/data/status-radio-public.json';
 }
-
 function getCoverUrl() {
-    return STREAM_URL.includes('radio-local')
-        ? '/cover-radio-local.jpg'
-        : '/cover-radio-public.jpg';
-}
-
-// =============================================================================
-// HORLOGE SERVEUR
-// =============================================================================
-
-// Retourne l'heure serveur estimée à cet instant (en secondes unix).
-function serverNow() {
-    return baseServerNow + (Date.now() / 1000 - baseLocalTime);
-}
-
-// Met à jour l'ancre serveur depuis une réponse JSON.
-// On ajoute le demi-RTT pour corriger le délai de transit HTTP.
-function updateServerClock(data, rtt) {
-    const estimated = data.serverNow + rtt / 2;
-    // Ne jamais reculer l'horloge
-    if (estimated > baseServerNow) {
-        baseServerNow = estimated;
-        baseLocalTime = Date.now() / 1000;
+    if (STREAM_URL.includes('radio-local')) {
+        return '/cover-radio-local.jpg';
     }
+    return '/cover-radio-public.jpg';
 }
 
-// =============================================================================
-// POSITION DANS LE MORCEAU
-// =============================================================================
 
-// Retourne la position estimée en secondes dans le morceau actuellement joué,
-// corrigée du lag de transit.
-function currentPos(data) {
-    if (!data) return 0;
-    const start = new Date(data.startedAt).getTime() / 1000;
-    const pos = serverNow() - start - lag;
-    return Math.max(0, Math.min(pos, data.duration_raw || 0));
-}
-
-// =============================================================================
-// SYNC MANUEL (bouton 🎯)
-// =============================================================================
-
-// L'utilisateur clique exactement quand il entend le premier son d'un nouveau
-// morceau. À cet instant, le serveur a déjà joué (serverNow - startedAt) secondes
-// de ce morceau. Ce delta est le lag réel.
-function syncNow() {
-    if (!currentData) return;
-    const start = new Date(currentData.startedAt).getTime() / 1000;
-    const measured = serverNow() - start;
-    if (measured > 0 && measured < 60) {
-        lag = measured;
-        localStorage.setItem('icecastLag', lag.toFixed(2));
-        renderDebug(`lag: ${lag.toFixed(1)}s ✓ (sync manuel)`);
-        syncBtn.textContent = `🎯 ${lag.toFixed(1)}s`;
-    }
-}
-
-// =============================================================================
-// AUDIO : ÉVÉNEMENTS
-// =============================================================================
 
 audio.addEventListener('ended', () => {
     playBtn.classList.remove('playing', 'loading');
+    anchorAudioTime = 0;
 });
 
-audio.addEventListener('error', () => {
+audio.addEventListener('error', (e) => {
+    const error = audio.error;
     playBtn.classList.remove('playing', 'loading');
-    if (audio.error?.code === 2) {
-        console.warn('Erreur réseau, retry dans 3s...');
+    anchorAudioTime = 0;
+
+    // Retry automatique après 3s si c'est une erreur réseau
+    if (error.code === 2) {
+        console.warn("Erreur réseau — tentative de reconnexion dans 3s...");
         setTimeout(() => {
-            if (!audio.paused) reconnectAudio();
+            if (audio.paused) return; // L'utilisateur a peut-être voulu pause
+            const vol = audio.volume;
+            audio.src = STREAM_URL + '?t=' + Date.now();
+            audio.volume = vol;
+            audio.play().catch(console.error);
         }, 3000);
     }
 });
+
+let waitingTimeout = null;
 
 audio.addEventListener('waiting', () => {
     if (!audio.paused) {
         playBtn.classList.add('loading');
         playBtn.classList.remove('playing');
+
         waitingTimeout = setTimeout(() => {
             if (!audio.paused && playBtn.classList.contains('loading')) {
-                reconnectAudio();
+                console.log("Reconnexion du flux...");
+                const vol = audio.volume;
+                audio.src = STREAM_URL + '?t=' + Date.now();
+                audio.volume = vol;
+                audio.play().catch(err => {
+                    console.error("Échec de la reprise auto:", err);
+                    playBtn.classList.remove('playing', 'loading');
+                });
             }
-        }, 5000);
+        }, 5000); 
     }
 });
 
@@ -716,233 +663,303 @@ audio.addEventListener('playing', () => {
     clearTimeout(waitingTimeout);
     playBtn.classList.remove('loading');
     playBtn.classList.add('playing');
-    renderDebug(`lag: ${lag.toFixed(1)}s`);
+    debugDiv.textContent = `lag: ${icecastBufferDelay.toFixed(1)}s`;
 });
 
-function reconnectAudio() {
-    const vol = audio.volume;
-    audio.src = STREAM_URL + '?t=' + Date.now();
-    audio.volume = vol;
-    audio.play().catch(console.error);
-}
+function syncNow() {
+    // L'utilisateur clique exactement quand il entend le début d'un nouveau morceau.
+    // À cet instant, côté serveur, startedAt vient de changer depuis X secondes.
+    // Le lag = maintenant_local - startedAt_serveur_corrigé
+    const now = Date.now() / 1000;
+    const elapsed = now - baseLocalTime;
+    const data = currentPodcastData;
+    if (!data) return;
 
-// =============================================================================
-// LECTURE / PAUSE
-// =============================================================================
+    const start = new Date(data.startedAt).getTime() / 1000;
+    // serverPos = combien de secondes le serveur a joué ce morceau
+    const serverPos = (baseServerNow + elapsed) - start;
+    // Le lag = ce que le serveur a joué - ce que l'utilisateur vient d'entendre (≈ 0s = début)
+    const measuredLag = serverPos;
 
-function togglePlay() {
-    if (audio.paused) {
-        reconnectAudio();
-        playBtn.classList.remove('playing');
-        playBtn.classList.add('loading');
-    } else {
-        audio.pause();
-        playBtn.classList.remove('playing');
-        subDiv.innerHTML = '';
+    if (measuredLag > 0 && measuredLag < 60) {
+        icecastBufferDelay = measuredLag;
+        localStorage.setItem('icecastBufferDelay', measuredLag.toFixed(2));
+        debugDiv.textContent = `lag mesuré: ${measuredLag.toFixed(1)}s ✓`;
     }
 }
 
-// =============================================================================
-// POCHETTE
-// =============================================================================
+function calibrateDelay() {
+    if (audio.paused) return;
 
-function updateCoverArt() {
-    const tempImg = new Image();
-    tempImg.onload = () => {
-        coverImg.src = tempImg.src;
-        coverImg.classList.add('visible');
-        coverEmoji.style.opacity = '0';
-        albumArtContainer.classList.add('has-cover');
-    };
-    tempImg.onerror = () => {
-        coverImg.classList.remove('visible');
-        coverEmoji.style.opacity = '1';
-        albumArtContainer.classList.remove('has-cover');
-    };
-    tempImg.src = getCoverUrl() + '?t=' + Date.now();
+    // Si on a un changement de titre récent non encore confirmé dans l'audio
+    if (lastTitleChangeLocalTime > 0 && lastTitleChangeTitle === (displayedPodcastData?.title)) {
+        const now = Date.now() / 1000;
+        const timeSinceChange = now - lastTitleChangeLocalTime;
+
+        // On cherche à savoir combien de temps après le signal JSON
+        // le changement est réellement audible.
+        // On utilise la progression serveur pour estimer :
+        // si serverPos - startedAt ≈ 0, le morceau vient juste de commencer côté serveur.
+        // Le lag = temps écoulé localement depuis le signal JSON jusqu'à ce que
+        // la position serveur soit ≈ 0 (début du nouveau morceau + lag).
+        
+        const elapsed = now - baseLocalTime;
+        const activeData = currentPodcastData;
+        if (activeData) {
+            const start = new Date(activeData.startedAt).getTime() / 1000;
+            const serverPos = (baseServerNow + elapsed) - start;
+            
+            // serverPos progresse depuis 0 au début du morceau.
+            // Le lag réel = timeSinceChange - serverPos
+            // (car serverPos secondes se sont déjà écoulées côté serveur
+            //  depuis le début du morceau au moment du signal JSON)
+            if (serverPos >= 0 && serverPos < 60 && timeSinceChange > 0) {
+                const estimatedLag = timeSinceChange - serverPos;
+                if (estimatedLag > 0 && estimatedLag < 30) {
+                    calibrationSamples.push(estimatedLag);
+                    if (calibrationSamples.length > 6) calibrationSamples.shift();
+                    const sorted = [...calibrationSamples].sort((a, b) => a - b);
+                    const median = sorted[Math.floor(sorted.length / 2)];
+                    icecastBufferDelay = median;
+                    localStorage.setItem('icecastBufferDelay', median.toFixed(2));
+                    debugDiv.textContent = `lag: ${median.toFixed(1)}s (${calibrationSamples.length} samples)`;
+                }
+            }
+        }
+    }
+    if (!audio.paused) setTimeout(calibrateDelay, 500);
 }
 
-// =============================================================================
-// VTT / SOUS-TITRES
-// =============================================================================
-
-function normalizeVtt(url) { return url ? url.split('?')[0] : ''; }
+function normalizeVtt(url) {
+    return url ? url.split('?')[0] : '';
+}
 
 function parseVttTime(t) {
     const p = t.trim().replace(',', '.').split(':').map(Number);
-    return p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : p[0] * 60 + p[1];
+    if (p.length === 3) return p[0] * 3600 + p[1] * 60 + p[2];
+    return p[0] * 60 + p[1];
 }
 
-function parseVTT(text) {
-    const result = [];
-    for (const block of text.split(/\n\s*\n/)) {
+function parseVTT(vttText) {
+    const cues = [];
+    const blocks = vttText.split(/\n\s*\n/);
+    blocks.forEach(block => {
         const lines = block.split('\n').map(l => l.trim());
-        const tl = lines.find(l => l.includes('-->'));
-        if (!tl) continue;
-        const [s, e] = tl.split('-->');
-        const textIdx = lines.indexOf(tl) + 1;
-        const cueText = lines.slice(textIdx).join(' ').trim();
-        if (cueText) result.push({ start: parseVttTime(s), end: parseVttTime(e), text: cueText });
-    }
-    return result;
+        const timeLine = lines.find(l => l.includes('-->'));
+        if (timeLine) {
+            const [startStr, endStr] = timeLine.split('-->');
+            const start = parseVttTime(startStr);
+            const end = parseVttTime(endStr);
+            const textIdx = lines.indexOf(timeLine) + 1;
+            const text = lines.slice(textIdx).join(' ').trim();
+            if (text) cues.push({ start, end, text });
+        }
+    });
+    return cues;
 }
 
-// =============================================================================
-// FETCH MÉTADONNÉES
-// =============================================================================
+function togglePlay() {
+    if (audio.paused) {
+        const currentVolume = audio.volume;
+
+        audio.src = STREAM_URL + '?t=' + Date.now();
+        audio.volume = currentVolume;
+        audio.play();
+        playBtn.classList.remove('playing');
+        playBtn.classList.add('loading');
+
+        if (currentPodcastData) {
+            const clickLocalTime = Date.now() / 1000;
+            playClickTime = clickLocalTime;
+            const start = new Date(currentPodcastData.startedAt).getTime() / 1000;
+            const secondsSinceFetch = clickLocalTime - currentPodcastData.fetchedAt;
+            offsetAtPlay = (currentPodcastData.serverNow + secondsSinceFetch) - start;
+        }
+    } else {
+        audio.pause();
+        anchorAudioTime = 0;
+        playBtn.classList.remove('playing');
+        subDiv.innerHTML = "";
+    }
+}
+
+const coverEmoji = document.getElementById('cover-emoji');
+const albumArtContainer = document.getElementById('album-art-container');
+
+function updateCoverArt() {
+    setTimeout(() => {
+        const tempImg = new Image();
+        tempImg.onload = () => {
+            coverImg.src = tempImg.src;
+            coverImg.classList.add('visible');
+            coverEmoji.style.opacity = '0';
+            albumArtContainer.classList.add('has-cover');
+        };
+        tempImg.onerror = () => {
+            coverImg.classList.remove('visible');
+            coverEmoji.style.opacity = '1';
+            albumArtContainer.classList.remove('has-cover');
+        };
+        tempImg.src = getCoverUrl() + "?t=" + Date.now();
+    }, 500);
+}
 
 async function fetchMetadata() {
     if (isFetching) return;
     isFetching = true;
     try {
-        const t0 = Date.now() / 1000;
         const res = await fetch(getStatusUrl() + '?t=' + Date.now());
         const data = await res.json();
-        const rtt = Date.now() / 1000 - t0;
+        data.fetchedAt = Date.now() / 1000;
+        
+        const prevVtt = normalizeVtt(currentPodcastData?.vtt);
+        currentPodcastData = data;
 
-        updateServerClock(data, rtt);
+        // Ne mettre à jour l'ancre serveur que si la valeur avance (jamais en arrière)
+        // et uniquement si l'audio ne sert pas déjà d'ancre fiable.
+        const newLocalTime = Date.now() / 1000;
+        const projectedServerNow = baseServerNow + (newLocalTime - baseLocalTime);
+        const serverAdvanced = data.serverNow > projectedServerNow;
+        const audioIsAnchor = !audio.paused && anchorAudioTime > 0;
 
-        const prevVtt   = normalizeVtt(currentData?.vtt);
-        const prevTitle = currentData?.title;
-        currentData = data;
+        if (!audioIsAnchor && (baseLocalTime === 0 || serverAdvanced)) {
+            baseServerNow = data.serverNow;
+            baseLocalTime = newLocalTime;
+        }
+        
+        const trackChanged = data.title !== lastTrackTitle;
 
-        const titleChanged = data.title !== lastTitle;
-        const vttChanged   = normalizeVtt(data.vtt) !== prevVtt;
+        if (trackChanged || vttChanged) {
+            lastTrackTitle = data.title;
 
-        if (titleChanged || vttChanged) {
-            lastTitle = data.title;
+            // On note l'heure locale exacte où le serveur a signalé ce changement
+            lastTitleChangeLocalTime = Date.now() / 1000;
+            lastTitleChangeTitle = data.title;
 
-            // Retarder l'affichage du nouveau titre du lag, pour que l'UI
-            // change en même temps que ce que l'auditeur entend.
+            const delay = icecastBufferDelay * 1000;
+
             setTimeout(async () => {
-                cues = [];
+                subDiv.innerHTML = "";
+                cuesIndex = [];
                 hasSubtitles = false;
-                subDiv.innerHTML = '';
-
-                const isNewShow = data.event !== displayedData?.event;
-                if (isNewShow && audio.paused) {
+                const isNewShow = data.event !== displayedPodcastData?.event;
+                if (isNewShow && (audio.paused || audio.ended)) {
                     audio.src = STREAM_URL + '?t=' + Date.now();
                 }
-
-                displayedData = data;
-                renderTrackInfo(data);
-                updateCoverArt();
-
+                displayedPodcastData = data;
+                updateUI(data);
+                anchorAudioTime = 0;
                 if (data.vtt) {
-                    try {
-                        const vttRes = await fetch(data.vtt);
-                        cues = parseVTT(await vttRes.text());
-                        hasSubtitles = true;
-                    } catch (e) { console.error('VTT fetch error:', e); }
+                    const vttRes = await fetch(data.vtt);
+                    cuesIndex = parseVTT(await vttRes.text());
+                    hasSubtitles = true;
                 }
-            }, lag * 1000);
+            }, delay);
         }
-    } catch (e) { console.error('Metadata error:', e); }
+    } catch (e) { console.error("Metadata Error:", e); }
     finally { isFetching = false; }
 }
 
-// =============================================================================
-// RENDU UI
-// =============================================================================
-
-function renderTrackInfo(data) {
-    titleEl.innerText  = data.title  || '';
-    artistEl.innerText = data.artist || '';
-    albumEl.innerText  = data.album  || '';
-    document.getElementById('metadata').textContent = data.event || '';
-}
-
-function renderDebug(msg) {
-    debugDiv.style.display = 'block';
-    debugDiv.textContent = msg;
-}
-
-function formatTime(s) {
-    const m = Math.floor(s / 60);
-    return `${String(Math.floor(m)).padStart(2,'0')}:${String(Math.floor(s % 60)).padStart(2,'0')}`;
-}
-
-// =============================================================================
-// BOUCLE D'ANIMATION
-// =============================================================================
-
 function animate() {
-    const data = displayedData || currentData;
-    if (data) {
-        const pos = currentPos(data);
-        const dur = data.duration_raw || 1;
+    const activeData = displayedPodcastData || currentPodcastData;
+    if (!activeData) { requestAnimationFrame(animate); return; }
 
-        progressFill.style.width = (pos / dur * 100) + '%';
-        timeEl.innerText     = formatTime(pos);
-        durationEl.innerText = data.duration || '--:--';
+    const now = Date.now() / 1000;
+    const elapsed = now - baseLocalTime;
+    const start = new Date(activeData.startedAt).getTime() / 1000;
+    const durationRaw = activeData.duration_raw || 1;
 
-        if (hasSubtitles && cues.length > 0 && !audio.paused) {
-            const cue = cues.find(c => pos >= c.start && pos <= c.end);
-            const txt = cue ? cue.text : '';
-            if (subDiv.innerHTML !== txt) subDiv.innerHTML = txt;
-        } else if (!hasSubtitles || data.event === 'Musique') {
-            if (pos >= dur || audio.paused) {
-                if (subDiv.innerHTML) { subDiv.innerHTML = ''; cues = []; }
-            }
+    // Position = ce que le serveur joue, moins le lag de transit
+    const currentPos = Math.max(0, Math.min(
+        (baseServerNow + elapsed) - start - icecastBufferDelay,
+        durationRaw
+    ));
+
+    progressFill.style.width = (currentPos / durationRaw) * 100 + "%";
+    time.innerText = formatTime(currentPos);
+    duration.innerText = activeData.duration || "--:--";
+
+    if (hasSubtitles && cuesIndex.length > 0 && !audio.paused) {
+        const currentCue = cuesIndex.find(cue => currentPos >= cue.start && currentPos <= cue.end);
+        const newText = currentCue ? currentCue.text : "";
+        if (subDiv.innerHTML !== newText) subDiv.innerHTML = newText;
+    } else if (!hasSubtitles || displayedPodcastData?.event === "Musique") {
+        if (currentPos >= durationRaw || audio.paused) {
+            if (subDiv.innerHTML !== "") { subDiv.innerHTML = ""; cuesIndex = []; }
         }
     }
     requestAnimationFrame(animate);
 }
 
-// =============================================================================
-// VOLUME
-// =============================================================================
+function updateUI(data) {
+    title.innerText  = data.title  || "";
+    artist.innerText = data.artist || "";
+    album.innerText  = data.album  || "";
+    document.getElementById('metadata').textContent = data.event;
+    lastTrackTitle = data.title;
+    updateCoverArt();
+
+    if (!audio.paused) {
+        playClickTime = Date.now() / 1000;
+        const start = new Date(data.startedAt).getTime() / 1000;
+        offsetAtPlay  = data.serverNow - start;
+    }
+}
+
+function formatTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
 
 const volumeSlider = document.getElementById('volume-slider');
 function updateVolume() {
-    audio.volume = Math.pow(parseFloat(volumeSlider.value), 2);
+    const sliderValue = parseFloat(volumeSlider.value);
+    audio.volume = Math.pow(sliderValue, 2);
 }
 updateVolume();
 volumeSlider.addEventListener('input', updateVolume);
 
-// =============================================================================
-// DÉMARRAGE
-// =============================================================================
-
-async function start() {
-    detectStream();
-
-    // Premier fetch : initialise l'horloge serveur avec correction RTT
+async function measureInitialLag() {
     const t0 = Date.now() / 1000;
     const res = await fetch(getStatusUrl() + '?t=' + Date.now());
     const data = await res.json();
-    const rtt = Date.now() / 1000 - t0;
-    updateServerClock(data, rtt);
+    const t1 = Date.now() / 1000;
 
-    currentData   = data;
-    displayedData = data;
-    lastTitle     = data.title;
-    renderTrackInfo(data);
-    updateCoverArt();
+    // serverNow est l'heure serveur au moment de l'écriture du JSON
+    // On estime l'heure serveur actuelle = serverNow + demi-RTT
+    const rtt = t1 - t0;
+    const estimatedServerNow = data.serverNow + rtt / 2;
 
-    if (data.vtt) {
-        try {
-            const vttRes = await fetch(data.vtt);
-            cues = parseVTT(await vttRes.text());
-            hasSubtitles = true;
-        } catch(e) {}
-    }
+    // Ce que le serveur diffuse en ce moment
+    const start = new Date(data.startedAt).getTime() / 1000;
+    const serverPos = estimatedServerNow - start;
 
-    // Affiche le bouton sync et le lag en cours
-    syncBtn.style.display = 'inline-block';
-    syncBtn.textContent = lag > 0 ? `🎯 ${lag.toFixed(1)}s` : '🎯 Sync';
-    renderDebug(lag > 0 ? `lag: ${lag.toFixed(1)}s (cache)` : 'lag: 0s — cliquer 🎯 au début d\'un morceau');
+    // L'audio que l'utilisateur entend correspond à serverPos - lag secondes.
+    // On ne connaît pas encore le lag, mais on peut au moins initialiser
+    // baseServerNow et baseLocalTime proprement.
+    baseServerNow = estimatedServerNow;
+    baseLocalTime = t1;
 
-    animate();
-    setInterval(fetchMetadata, 1000);
+    return data;
 }
 
+async function start() {
+    await detectStream();
+    const data = await measureInitialLag();
+    data.fetchedAt = Date.now() / 1000;
+    currentPodcastData = data;
+    displayedPodcastData = data;
+    updateUI(data);
+    fetchMetadata();
+    animate();
+    debugDiv.textContent = `lag: ${icecastBufferDelay.toFixed(1)}s (en attente changement de piste...)`;
+}
+
+setInterval(fetchMetadata, 1000);
 start();
 
-// =============================================================================
-// TIMELINE DU PROGRAMME
-// =============================================================================
-
+// --- Schedule ---
 const fullSchedule = [
     {h: 9,  t: "📰", desc: "News"},
     {h: 10, t: "🎙️", desc: "Chronique"},
@@ -953,40 +970,69 @@ const fullSchedule = [
     {h: 20, t: "📰", desc: "News"}
 ];
 
-function parisHourToLocal(h) {
-    // Calcule le décalage Paris → local en heures entières
-    const now = new Date();
-    const parisTime = new Date(now.toLocaleString("en-US", {timeZone: "Europe/Paris"}));
-    const localTime = new Date(now.toLocaleString("en-US"));
-    const offsetH   = Math.round((localTime - parisTime) / 3600000);
-    return (h + offsetH + 24) % 24;
-}
-
 function updateZoomTimeline() {
     const now = new Date();
-    const parisNow = new Date(now.toLocaleString("en-US", {timeZone: "Europe/Paris"}));
-    const nowMin   = parisNow.getHours() * 60 + parisNow.getMinutes();
 
-    // Trouver l'événement courant ou prochain (dans la fenêtre de 15 min)
+    // 1. Trouver l'index basé sur le moment présent
+    // On compare l'heure actuelle à l'heure prévue à Paris
     let currentIndex = fullSchedule.findIndex(s => {
-        const eventMin = s.h * 60;
-        return eventMin > nowMin || Math.abs(nowMin - eventMin) < 15;
+        const eventInParis = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Paris"}));
+        eventInParis.setHours(s.h, 0, 0, 0);
+        
+        // Si l'événement est dans le futur ou dans la marge des 15 min
+        return eventInParis > now || Math.abs(now - eventInParis) < 15 * 60000;
     });
+
     if (currentIndex === -1) currentIndex = 0;
 
     const selection = [];
     for (let i = -2; i <= 2; i++) {
-        const idx  = (currentIndex + i + fullSchedule.length) % fullSchedule.length;
+        let idx = (currentIndex + i + fullSchedule.length) % fullSchedule.length;
         const item = fullSchedule[idx];
-        selection.push({
-            ...item,
-            displayH: parisHourToLocal(item.h),
-            isFocus:  i === 0
+
+        // --- LA CONVERSION MAGIQUE ---
+        // On crée une date fictive qui représente l'heure de Paris
+        // "2024-01-01T09:00:00" dans le fuseau Europe/Paris
+        const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Europe/Paris',
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            hour12: false
+        });
+
+        // On cherche à quelle heure locale correspond le "s.h" de Paris
+        const parts = formatter.formatToParts(now);
+        const dateStr = `${parts.find(p=>p.type==='year').value}-${parts.find(p=>p.type==='month').value}-${parts.find(p=>p.type==='day').value}T${item.h.toString().padStart(2, '0')}:00:00`;
+        
+        // On crée la date en spécifiant qu'il s'agit d'une heure de Paris
+        const parisDate = new Date(new Date(dateStr).toLocaleString("en-US", {timeZone: "Europe/Paris"}));
+        
+        // .getHours() renverra l'heure locale (9h à Paris, 3h ou 4h à Québec)
+        const localH = new Date(dateStr + "Z").toLocaleTimeString('fr-FR', {
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, // Heure locale utilisateur
+            hour: '2-digit',
+            hour12: false
+        }).replace('24', '00'); // Gère le format minuit
+
+        // Pour éviter les bugs complexes de conversion inverse, voici la méthode la plus fiable :
+        const diffDate = new Date();
+        const parisTime = new Date(diffDate.toLocaleString("en-US", {timeZone: "Europe/Paris"}));
+        const localTime = new Date(diffDate.toLocaleString("en-US"));
+        const offset = (localTime - parisTime) / 3600000;
+        
+        const finalDisplayH = (item.h + Math.round(offset) + 24) % 24;
+
+        selection.push({ 
+            ...item, 
+            displayH: finalDisplayH,
+            isFocus: i === 0 
         });
     }
 
+    // Rendu HTML
     const container = document.getElementById('zoom-timeline');
-    if (!container) return;
+    if(!container) return;
+
     container.innerHTML = `
         <div class="row events">
             ${selection.map(s => `<div class="${s.isFocus ? 'focus' : ''}">${s.t}</div>`).join('')}
@@ -1003,8 +1049,6 @@ function updateZoomTimeline() {
 
 updateZoomTimeline();
 setInterval(updateZoomTimeline, 60000);
-
-
 </script>
 </body>
 </html>
