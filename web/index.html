@@ -796,6 +796,62 @@ function parseVTT(text) {
 }
 
 // =============================================================================
+// AUTO-SYNC
+// =============================================================================
+
+// Au changement de titre, startedAt vient de passer à ~0 côté serveur.
+// serverNow() - startedAt mesure donc combien le serveur est en avance sur
+// l'audio qui arrive au client = le lag de transit.
+// On fait plusieurs mesures sur 3s et on prend la médiane pour être robuste
+// aux petites variations de serverNow entre deux fetches.
+
+let autoSyncSamples   = [];
+let autoSyncTimer     = null;
+let autoSyncStartedAt = 0;
+
+function startAutoSync(startedAt) {
+    // Annule un éventuel auto-sync en cours (changement de titre rapide)
+    if (autoSyncTimer) clearInterval(autoSyncTimer);
+    autoSyncSamples   = [];
+    autoSyncStartedAt = startedAt;
+
+    // Première mesure immédiate, puis toutes les 500ms pendant 3s (6 mesures)
+    const measure = () => {
+        const measured = serverNow() - autoSyncStartedAt;
+        // Sanity check : entre 0 et 120s (on accepte large)
+        if (measured > 0 && measured < 120) {
+            autoSyncSamples.push(measured);
+        }
+        if (autoSyncSamples.length >= 6) {
+            clearInterval(autoSyncTimer);
+            autoSyncTimer = null;
+            applyAutoSync();
+        }
+    };
+
+    measure(); // immédiat
+    autoSyncTimer = setInterval(measure, 500);
+}
+
+function applyAutoSync() {
+    if (autoSyncSamples.length === 0) return;
+    const sorted = [...autoSyncSamples].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+
+    // N'appliquer que si la mesure est cohérente avec ce qu'on sait déjà
+    // (on tolère un écart de 30s par rapport à la valeur en cache)
+    if (lag > 0 && Math.abs(median - lag) > 30) {
+        renderDebug(`auto-sync ignoré: ${median.toFixed(1)}s trop différent du cache (${lag.toFixed(1)}s)`);
+        return;
+    }
+
+    lag = median;
+    localStorage.setItem('icecastLag', lag.toFixed(2));
+    syncBtn.textContent = `🎯 ${lag.toFixed(1)}s`;
+    renderDebug(`lag: ${lag.toFixed(1)}s ✓ (auto)`);
+}
+
+// =============================================================================
 // FETCH MÉTADONNÉES
 // =============================================================================
 
@@ -810,12 +866,20 @@ async function fetchMetadata() {
 
         updateServerClock(data, rtt);
 
-        const prevVtt   = normalizeVtt(currentData?.vtt);
-        const prevTitle = currentData?.title;
+        const prevVtt      = normalizeVtt(currentData?.vtt);
+        const prevStartedAt = currentData?.startedAt;
         currentData = data;
 
-        const titleChanged = data.title !== lastTitle;
-        const vttChanged   = normalizeVtt(data.vtt) !== prevVtt;
+        const titleChanged    = data.title !== lastTitle;
+        const vttChanged      = normalizeVtt(data.vtt) !== prevVtt;
+        const startedAtChanged = data.startedAt !== prevStartedAt;
+
+        // Auto-sync : se déclenche dès que startedAt change (nouveau morceau)
+        // indépendamment de l'affichage de l'UI.
+        if (startedAtChanged && prevStartedAt != null) {
+            const newStart = new Date(data.startedAt).getTime() / 1000;
+            startAutoSync(newStart);
+        }
 
         if (titleChanged || vttChanged) {
             lastTitle = data.title;
