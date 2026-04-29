@@ -653,7 +653,8 @@ audio.addEventListener('playing', () => {
     // On calcule le délai réel de Chrome (le fameux retard de 9s)
     if (audio.buffered.length > 0) {
         const end = audio.buffered.end(audio.buffered.length - 1);
-        icecastBufferDelay = end - audio.currentTime;
+        icecastBufferDelay = offsetAtPlay - audio.currentTime;
+        console.log(icecastBufferDelay);
     }
 
     // --- LA CLÉ EST ICI ---
@@ -711,7 +712,7 @@ function togglePlay() {
             const start = new Date(currentPodcastData.startedAt).getTime() / 1000;
             const secondsSinceFetch = clickLocalTime - currentPodcastData.fetchedAt;
             offsetAtPlay = (currentPodcastData.serverNow + secondsSinceFetch) - start;
-            console.log(offsetAtPlay);
+            //console.log(offsetAtPlay);
         }
     } else {
         audio.pause();
