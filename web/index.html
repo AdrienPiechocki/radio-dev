@@ -598,17 +598,17 @@ audio.addEventListener('error', (e) => {
     const error = audio.error;
     playBtn.classList.remove('playing', 'loading');
 
-    // Retry automatique après 0.5s si c'est une erreur réseau
+    // Retry automatique après 3s si c'est une erreur réseau
     if (error.code === 2) {
-        console.warn("Erreur réseau — tentative de reconnexion dans 0.5s...");
+        console.warn("Erreur réseau — tentative de reconnexion dans 3s...");
         setTimeout(() => {
             if (audio.paused) return; // L'utilisateur a peut-être voulu pause
-            icecastBufferDelay += 0.5;
+            icecastBufferDelay += 3;
             const vol = audio.volume;
             audio.src = STREAM_URL + '?t=' + Date.now();
             audio.volume = vol;
             audio.play().catch(console.error);
-        }, 500);
+        }, 3000);
     }
 });
 
