@@ -620,7 +620,6 @@ audio.addEventListener('error', (e) => {
 let waitingTimeout = null;
 
 audio.addEventListener('waiting', () => {
-    console.log("oui")
     if (!audio.paused) {
         playBtn.classList.add('loading');
         playBtn.classList.remove('playing');
