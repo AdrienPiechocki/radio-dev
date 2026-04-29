@@ -676,7 +676,7 @@ audio.addEventListener('playing', () => {
         })
         .catch(() => {
             // Fallback sur l'interpolation si le fetch échoue
-            anchorServerPos = serverPos - icecastBufferDelay;
+            anchorServerPos = serverPos;
             anchorAudioTime = audio.currentTime;
         });
 });
