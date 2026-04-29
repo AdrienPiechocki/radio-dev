@@ -650,21 +650,16 @@ audio.addEventListener('playing', () => {
     
     const start = new Date(activeData.startedAt).getTime() / 1000;
 
-    // On calcule le délai réel de Chrome (le fameux retard de 9s)
-    if (audio.buffered.length > 0) {
-        const end = audio.buffered.end(audio.buffered.length - 1);
-        icecastBufferDelay = end - audio.currentTime;
-    }
-
-    // --- LA CLÉ EST ICI ---
-    // On définit l'ancre de position au moment PRÉCIS où la lecture commence.
-    // On prend le temps serveur actuel et on retire le délai de buffer.
-    anchorServerPos = (baseServerNow + (now - baseLocalTime)) - start - icecastBufferDelay;
+    // 1. On calcule la position théorique sur le serveur à cet instant précis
+    const serverPositionNow = (baseServerNow + (now - baseLocalTime)) - start;
+    
+    // 2. On enregistre le décalage réel (Position Serveur vs Temps de l'élément Audio)
+    // anchorServerPos devient notre point de référence "Zéro"
+    anchorServerPos = serverPositionNow;
     anchorAudioTime = audio.currentTime;
 
-    if (icecastBufferDelay > 0) {
-        localStorage.setItem('icecastBufferDelay', icecastBufferDelay.toFixed(2));
-    }
+    // Optionnel : Calculer le délai pour le debug (ex: 9s sur Chrome)
+    icecastBufferDelay = serverPositionNow - (audio.currentTime); 
 });
 
 function normalizeVtt(url) {
@@ -810,29 +805,28 @@ async function fetchMetadata() {
 }
 
 function animate() {
-const activeData = displayedPodcastData || currentPodcastData;
+    const activeData = displayedPodcastData || currentPodcastData;
     if (!activeData) { requestAnimationFrame(animate); return; }
 
-    const now = Date.now() / 1000;
-    const elapsed = now - baseLocalTime;
-    const start = new Date(activeData.startedAt).getTime() / 1000;
     const durationRaw = activeData.duration_raw || 1;
-
     let currentPos;
 
     if (!audio.paused && anchorAudioTime > 0) {
-        // Si on lit, on suit la progression réelle de la tête de lecture
+        // --- SYNCHRONISATION DIRECTE ---
+        // On prend l'ancre serveur et on ajoute la progression réelle de l'audio
         const audioDelta = audio.currentTime - anchorAudioTime;
         currentPos = anchorServerPos + audioDelta;
     } else {
-        // En pause ou chargement, on se base sur le serveur 
-        // MAIS on retire le délai habituel pour que l'UI ne soit pas en avance
+        // Fallback en pause (basé sur le temps serveur moins le dernier délai connu)
+        const now = Date.now() / 1000;
+        const elapsed = now - baseLocalTime;
+        const start = new Date(activeData.startedAt).getTime() / 1000;
         currentPos = (baseServerNow + elapsed) - start - icecastBufferDelay;
     }
 
-    // Sécurité pour ne pas dépasser la fin
+    // Le reste reste identique (Math.min, update UI...)
     currentPos = Math.max(0, Math.min(currentPos, durationRaw));
-
+    
     progressFill.style.width = (currentPos / durationRaw) * 100 + "%";
     time.innerText = formatTime(currentPos);
     duration.innerText = activeData.duration || "--:--";
