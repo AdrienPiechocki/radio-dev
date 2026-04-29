@@ -575,7 +575,7 @@ async function detectStream() {
     } else {
         STREAM_URL = '/icecast/radio-public';
     }
-    audio.src = STREAM_URL;
+    audio.src = STREAM_URL + '?t=' + Date.now();
     console.log('Stream sélectionné :', STREAM_URL);
 }
 
@@ -789,7 +789,6 @@ async function fetchMetadata() {
                 
                 const isNewShow = data.event !== displayedPodcastData?.event;
                 if (isNewShow && (audio.paused || audio.ended)) {
-                    console.log("oui");
                     audio.src = STREAM_URL + '?t=' + Date.now();
                 }
                 displayedPodcastData = data;
