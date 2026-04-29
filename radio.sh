@@ -482,6 +482,7 @@ mark_podcast_played() {
         # Annonce associée (même timestamp)
         local ts=$(basename "$base" | sed 's/podcast_//')
         rm -f "./podcasts/announce_${ts}.wav"
+        rm -f "./podcasts/announce_${ts}.vtt"
         log "🗑️  Podcast ${ts} supprimé (joué par les 2 radios)"
     fi
 }
