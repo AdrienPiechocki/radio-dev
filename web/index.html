@@ -644,41 +644,6 @@ audio.addEventListener('playing', () => {
     clearTimeout(waitingTimeout);
     playBtn.classList.remove('loading');
     playBtn.classList.add('playing');
-
-    const activeData = displayedPodcastData || currentPodcastData;
-    if (!activeData) return;
-
-    const start = new Date(activeData.startedAt).getTime() / 1000;
-    const localNow = Date.now() / 1000;
-    
-    // serverNow interpolé depuis le dernier fetch
-    const interpolatedServerNow = baseServerNow + (localNow - baseLocalTime);
-    
-    // Position que le serveur pense jouer maintenant
-    const serverPos = interpolatedServerNow - start;
-    
-    // CALIBRATION : on recharge le statut pour avoir un serverNow frais
-    fetch(getStatusUrl() + '?t=' + Date.now())
-        .then(r => r.json())
-        .then(freshData => {
-            const fetchEnd = Date.now() / 1000;
-            // serverNow frais, compensé du demi-RTT
-            const freshServerPos = freshData.serverNow - new Date(freshData.startedAt).getTime() / 1000;
-            
-            // Le buffer réel = ce que le serveur joue - ce que l'utilisateur entend
-            // audio.currentTime ≈ 0 au début, donc on se base sur la position serveur
-            icecastBufferDelay = freshServerPos - (audio.currentTime || 0);
-            
-            anchorServerPos = freshServerPos;
-            anchorAudioTime = audio.currentTime;
-            
-            console.log(`Buffer calibré : ${icecastBufferDelay.toFixed(2)}s`);
-        })
-        .catch(() => {
-            // Fallback sur l'interpolation si le fetch échoue
-            anchorServerPos = serverPos;
-            anchorAudioTime = audio.currentTime;
-        });
 });
 
 function normalizeVtt(url) {
@@ -834,7 +799,7 @@ function animate() {
     const ServerPos = activeData.serverNow - new Date(activeData.startedAt).getTime() / 1000;
     let currentPos;
 
-    if (!audio.paused && anchorAudioTime > 0) {
+    if (!audio.paused) {
         // Si on lit, on suit la progression réelle de la tête de lecture
         const audioDelta = audio.currentTime - anchorAudioTime;
         currentPos = ServerPos + audioDelta;
