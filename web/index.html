@@ -614,6 +614,7 @@ audio.addEventListener('error', () => {
                 return;
             }
             console.log("🔁 Reconnexion stream...");
+            audio.src = STREAM_URL + '?t=' + Date.now();
             audio.volume = audio.volume;
             audio.play()
                 .catch(err => {
@@ -642,6 +643,7 @@ audio.addEventListener('waiting', () => {
                 isRetrying = true;
 
                 console.log("Reconnexion (waiting)...");
+                audio.src = STREAM_URL + '?t=' + Date.now();
                 audio.volume = audio.volume;
                 audio.play()
                     .catch(console.error)
