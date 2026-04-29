@@ -714,9 +714,22 @@ function togglePlay() {
         }
     } else {
         audio.pause();
-        // On remet l'ancre à 0 pour que animate() reprenne le calcul basé sur le serveur
-        anchorAudioTime = 0; 
-        playBtn.classList.remove('playing', 'loading'); // Sécurité
+        
+        // --- NOUVEAU : On met à jour baseServerNow pour "figer" l'UI à l'endroit actuel ---
+        const now = Date.now() / 1000;
+        const activeData = displayedPodcastData || currentPodcastData;
+        if (activeData && anchorAudioTime > 0) {
+            const audioDelta = audio.currentTime - anchorAudioTime;
+            const precisePos = anchorServerPos + audioDelta;
+            const start = new Date(activeData.startedAt).getTime() / 1000;
+            
+            // On recalibre la base serveur pour que le calcul en pause soit identique au son
+            baseServerNow = precisePos + start + icecastBufferDelay;
+            baseLocalTime = now;
+        }
+
+        anchorAudioTime = 0;
+        playBtn.classList.remove('playing', 'loading');
         subDiv.innerHTML = "";
     }
 }
