@@ -652,6 +652,8 @@ audio.addEventListener('waiting', () => {
                 const vol = audio.volume;
                 audio.src = STREAM_URL + '?t=' + Date.now();
                 audio.volume = vol;
+                icecastBufferDelay += 5;
+                console.log(icecastBufferDelay);
 
                 audio.play()
                     .catch(console.error)
