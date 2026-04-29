@@ -43,45 +43,38 @@ log() { echo "[$(date '+%H:%M:%S %Z')] $*"; }
 # =============================================================================
 
 start_streamer() {
+    log "🚀 Préparation du pipe et du streamer..."
     rm -f "$FIFO"
     mkfifo "$FIFO"
 
+    # On lance ffmpeg en lui disant explicitement de ne pas bufferiser
     ffmpeg -loglevel error \
         -fflags +nobuffer+flush_packets \
         -flags +low_delay \
         -probesize 32 \
         -analyzeduration 0 \
-        -f mp3 -i "pipe:0" < "$FIFO" \
+        -f mp3 -i "pipe:0" \
         -c:a copy \
         -f mp3 \
+        -ice_public 0 \
         -content_type audio/mpeg \
-        "icecast://source:${ICECAST_SOURCE_PASSWORD}@${ICECAST_HOST}:${ICECAST_PORT}${ICECAST_MOUNT}" &
-    FFMPEG_PID=$!
+        "icecast://source:${ICECAST_SOURCE_PASSWORD}@${ICECAST_HOST}:${ICECAST_PORT}${ICECAST_MOUNT}" < "$FIFO" &
     
-    # Ouvre fd 3 en écriture avec timeout — si ffmpeg plante avant d'ouvrir le FIFO
-    # en lecture, on ne bloque pas indéfiniment (ce qui causait les restarts en boucle).
-    local waited=0
-    while true; do
-        # Tente l'ouverture en non-bloquant via sous-shell
-        if ( exec 3>"$FIFO" ) 2>/dev/null; then
-            exec 3>"$FIFO"
-            break
-        fi
-        # Vérifie que ffmpeg est toujours vivant
-        if ! kill -0 "$FFMPEG_PID" 2>/dev/null; then
-            log "❌  ffmpeg mort avant ouverture du FIFO — abandon"
-            return 1
-        fi
-        (( waited++ ))
-        if [[ $waited -ge 20 ]]; then
-            log "❌  Timeout ouverture FIFO après ${waited}s — ffmpeg ne répond pas"
-            kill "$FFMPEG_PID" 2>/dev/null || true
-            return 1
-        fi
-        sleep 0.5
-    done
+    FFMPEG_PID=$!
 
-    log "🔌  Streamer démarré (PID $FFMPEG_PID)"
+    # ASTUCE : On ouvre le FD 3 en mode lecture/écriture ( +> ) 
+    # Cela évite le blocage et maintient le pipe ouvert même si ffmpeg redémarre.
+    log "🔌 Ouverture du descripteur de fichier..."
+    exec 3+>"$FIFO" 
+
+    # Vérification rapide que ffmpeg n'a pas crashé au lancement
+    sleep 1
+    if ! kill -0 "$FFMPEG_PID" 2>/dev/null; then
+        log "❌ ffmpeg a échoué au démarrage. Vérifie tes identifiants Icecast."
+        return 1
+    fi
+
+    log "✅ Streamer opérationnel (PID $FFMPEG_PID)"
 }
 
 check_streamer() {
