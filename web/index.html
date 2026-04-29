@@ -793,17 +793,12 @@ async function fetchMetadata() {
                 const isNewShow = data.event !== displayedPodcastData?.event;
                 if (isNewShow && (audio.paused || audio.ended)) {
                     audio.src = STREAM_URL + '?t=' + Date.now();
-                    audio.play().then(() => {
-                        // 2. FORCE le saut vers la fin du buffer si Chrome a stocké du son
-                        setTimeout(() => {
-                            if (audio.buffered.length > 0) {
-                                const end = audio.buffered.end(audio.buffered.length - 1);
-                                if (end - audio.currentTime > 1) { // Si plus de 1s de retard
-                                    audio.currentTime = end; // Saut au direct
-                                }
-                            }
-                        }, 500);
-                    });
+                    if (audio.buffered.length > 0) {
+                        const end = audio.buffered.end(audio.buffered.length - 1);
+                        if (end - audio.currentTime > 1) { // Si plus de 1s de retard
+                            audio.currentTime = end; // Saut au direct
+                        }
+                    }
                 }
                 displayedPodcastData = data;
                 updateUI(data);
