@@ -778,27 +778,23 @@ async function fetchMetadata() {
             pendingTrackChange = true;
             lastTrackTitle = data.title;
             
-            const delay = Math.max(icecastBufferDelay, 0.5) * 1000;
+            pendingTrackChange = false;
+            subDiv.innerHTML = "";
+            cuesIndex = [];
+            hasSubtitles = false;
+            
+            const isNewShow = data.event !== displayedPodcastData?.event;
+            if (isNewShow && (audio.paused || audio.ended)) {
+                audio.src = STREAM_URL + '?t=' + Date.now();
+            }
+            displayedPodcastData = data;
+            updateUI(data);
 
-            setTimeout(async () => {
-                pendingTrackChange = false;
-                subDiv.innerHTML = "";
-                cuesIndex = [];
-                hasSubtitles = false;
-                
-                const isNewShow = data.event !== displayedPodcastData?.event;
-                if (isNewShow && (audio.paused || audio.ended)) {
-                    audio.src = STREAM_URL + '?t=' + Date.now();
-                }
-                displayedPodcastData = data;
-                updateUI(data);
-
-                if (data.vtt) {
-                    const vttRes = await fetch(data.vtt);
-                    cuesIndex = parseVTT(await vttRes.text());
-                    hasSubtitles = true;
-                }
-            }, delay);
+            if (data.vtt) {
+                const vttRes = await fetch(data.vtt);
+                cuesIndex = parseVTT(await vttRes.text());
+                hasSubtitles = true;
+            }
         } else if (!data.vtt) {
             hasSubtitles = false;
             cuesIndex = [];
