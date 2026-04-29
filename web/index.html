@@ -603,6 +603,7 @@ audio.addEventListener('error', (e) => {
         console.warn("Erreur réseau — tentative de reconnexion dans 0.5s...");
         setTimeout(() => {
             if (audio.paused) return; // L'utilisateur a peut-être voulu pause
+            icecastBufferDelay += 0.5;
             const vol = audio.volume;
             audio.src = STREAM_URL + '?t=' + Date.now();
             audio.volume = vol;
