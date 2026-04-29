@@ -43,27 +43,27 @@ log() { echo "[$(date '+%H:%M:%S %Z')] $*"; }
 # =============================================================================
 
 start_streamer() {
-    log "🚀 Préparation du pipe et du streamer..."
+    log "🚀 Préparation du streamer (Latence Zéro)..."
     rm -f "$FIFO"
     mkfifo "$FIFO"
 
-    # Lancement de ffmpeg avec les flags de latence zéro
+    # 1. On ouvre le descripteur 3 AVANT de lancer ffmpeg pour éviter le blocage
+    exec 3<>"$FIFO"
+
+    # 2. Lancement de ffmpeg
+    # IMPORTANT : Les options -f mp3 et -i pipe:0 doivent être ensemble
     ffmpeg -loglevel error \
         -fflags +nobuffer+flush_packets \
         -flags +low_delay \
         -probesize 32 \
         -analyzeduration 0 \
-        -f mp3 -i "pipe:0" \
+        -f mp3 -i pipe:0 \
         -c:a copy \
         -f mp3 \
-        -ice_public 0 \
         -content_type audio/mpeg \
-        "icecast://source:${ICECAST_SOURCE_PASSWORD}@${ICECAST_HOST}:${ICECAST_PORT}${ICECAST_MOUNT}" < "$FIFO" &
+        "icecast://source:${ICECAST_SOURCE_PASSWORD}@${ICECAST_HOST}:${ICECAST_PORT}${ICECAST_MOUNT}" <&3 &
     
     FFMPEG_PID=$!
-
-    # OUVERTURE DU FD 3 (Correction de la syntaxe)
-    exec 3<>"$FIFO" 
 
     sleep 1
     if ! kill -0 "$FFMPEG_PID" 2>/dev/null; then
@@ -71,7 +71,7 @@ start_streamer() {
         return 1
     fi
 
-    log "✅ Streamer opérationnel (PID $FFMPEG_PID)"
+    log "✅ Streamer opérationnel sans latence (PID $FFMPEG_PID)"
 }
 
 check_streamer() {
