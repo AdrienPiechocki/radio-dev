@@ -547,23 +547,18 @@ const duration = document.getElementById('duration');
 const progressFill  = document.getElementById('progress-fill');
 const coverImg      = document.getElementById('cover-img');
 
-let displayedData = null;
-let currentData = null;
+let displayedData      = null;
+let currentData        = null;
 let cuesIndex          = [];
 let hasSubtitles       = false;
 let lastTrackTitle     = "";
 let isFetching         = false;
 let lastCoverUrl       = "";
 
-let serverStartTime    = 0; 
-let playClickTime      = 0; 
-let offsetAtPlay       = 0; 
+let offset             = 0; 
 let baseServerNow      = 0;
 let baseLocalTime      = 0;
-let anchorServerPos    = 0;
-let anchorAudioTime    = 0;
-// Réutilise le dernier buffer mesuré pour que la progression en pause
-// soit cohérente avec la progression après play (évite le saut au démarrage).
+
 let icecastBufferDelay = parseFloat(localStorage.getItem('icecastBufferDelay') || '0');
 const ICECAST_BURST_DELAY = 65535 * 8 / 128000;
 
@@ -597,13 +592,11 @@ function getCoverUrl() {
 
 audio.addEventListener('ended', () => {
     playBtn.classList.remove('playing', 'loading');
-    anchorAudioTime = 0;
 });
 
 audio.addEventListener('error', (e) => {
     const error = audio.error;
     playBtn.classList.remove('playing', 'loading');
-    anchorAudioTime = 0;
 
     // Retry automatique après 3s si c'est une erreur réseau
     if (error.code === 2) {
@@ -652,16 +645,9 @@ audio.addEventListener('playing', () => {
     const start = new Date(activeData.startedAt).getTime() / 1000;
 
     const secondsSinceFetch = now - activeData.fetchedAt;
-    let offsetAtPlay2 = (activeData.serverNow + secondsSinceFetch) - start;
-    icecastBufferDelay = offsetAtPlay2 - offsetAtPlay + ICECAST_BURST_DELAY;
+    let offset_now = (activeData.serverNow + secondsSinceFetch) - start;
+    icecastBufferDelay = offset_now - offset + ICECAST_BURST_DELAY;
     console.log(icecastBufferDelay);
-
-
-    // --- LA CLÉ EST ICI ---
-    // On définit l'ancre de position au moment PRÉCIS où la lecture commence.
-    // On prend le temps serveur actuel et on retire le délai de buffer.
-    anchorServerPos = (baseServerNow + (now - baseLocalTime)) - start - icecastBufferDelay;
-    anchorAudioTime = audio.currentTime;
 
     if (icecastBufferDelay > 0) {
         localStorage.setItem('icecastBufferDelay', icecastBufferDelay.toFixed(2));
@@ -708,14 +694,12 @@ function togglePlay() {
 
         if (currentData) {
             const clickLocalTime = Date.now() / 1000;
-            playClickTime = clickLocalTime;
             const start = new Date(currentData.startedAt).getTime() / 1000;
             const secondsSinceFetch = clickLocalTime - currentData.fetchedAt;
-            offsetAtPlay = (currentData.serverNow + secondsSinceFetch) - start;
+            offset = (currentData.serverNow + secondsSinceFetch) - start;
         }
     } else {
         audio.pause();
-        anchorAudioTime = 0;
         playBtn.classList.remove('playing');
         subDiv.innerHTML = "";
     }
@@ -756,9 +740,8 @@ async function fetchMetadata() {
         const newLocalTime = Date.now() / 1000;
         const projectedServerNow = baseServerNow + (newLocalTime - baseLocalTime);
         const serverAdvanced = data.serverNow > projectedServerNow;
-        const audioIsAnchor = !audio.paused && anchorAudioTime > 0;
 
-        if (!audioIsAnchor && (baseLocalTime === 0 || serverAdvanced)) {
+        if (audio.paused && (baseLocalTime === 0 || serverAdvanced)) {
             baseServerNow = data.serverNow;
             baseLocalTime = newLocalTime;
         }
@@ -787,7 +770,6 @@ async function fetchMetadata() {
                 }
                 displayedData = data;
                 updateUI(data);
-                anchorAudioTime = 0;
 
                 if (data.vtt) {
                     const vttRes = await fetch(data.vtt);
