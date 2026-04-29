@@ -43,36 +43,50 @@ log() { echo "[$(date '+%H:%M:%S %Z')] $*"; }
 # =============================================================================
 
 start_streamer() {
-    log "🚀 Démarrage du streamer (Mode Linéaire Forcé)..."
     rm -f "$FIFO"
     mkfifo "$FIFO"
 
-    # On ouvre le descripteur 3 en mode lecture/écriture pour éviter le blocage
-    exec 3<>"$FIFO"
-
-    # Utilisation de pipe:0 avec désactivation explicite de l'analyse
-    ffmpeg -loglevel error \
-        -f mp3 \
-        -probesize 32 \
-        -analyzeduration 0 \
-        -i pipe:0 \
-        -fflags +nobuffer+flush_packets+discardcorrupt \
-        -flags +low_delay \
-        -c:a copy \
-        -f mp3 \
-        -ice_public 0 \
+    # Ouvre le fd 3 en écriture sur le FIFO (non-bloquant côté open grâce au
+    # fait que ffmpeg ouvre le FIFO en lecture juste après).
+    # On lance ffmpeg d'abord en arrière-plan, puis on ouvre le fd.
+    ffmpeg \
+        -hide_banner -nostdin \
+        -re \
+        -f s16le -ar 44100 -ac 2 -channel_layout stereo \
+        -i "$FIFO" \
+        -codec:a libmp3lame -b:a 128k -ar 44100 \
+        -ice_name "Radio Locale" \
+        -ice_description "Ma radio IA" \
         -content_type audio/mpeg \
-        "icecast://source:${ICECAST_SOURCE_PASSWORD}@${ICECAST_HOST}:${ICECAST_PORT}${ICECAST_MOUNT}" <&3 &
-    
+        -f mp3 \
+        "icecast://source:${ICECAST_SOURCE_PASSWORD}@${ICECAST_HOST}:${ICECAST_PORT}${ICECAST_MOUNT}" \
+        -loglevel error &
     FFMPEG_PID=$!
 
-    sleep 1
-    if ! kill -0 "$FFMPEG_PID" 2>/dev/null; then
-        log "❌ ffmpeg a échoué. Vérifie la connexion Icecast."
-        return 1
-    fi
+    # Ouvre fd 3 en écriture avec timeout — si ffmpeg plante avant d'ouvrir le FIFO
+    # en lecture, on ne bloque pas indéfiniment (ce qui causait les restarts en boucle).
+    local waited=0
+    while true; do
+        # Tente l'ouverture en non-bloquant via sous-shell
+        if ( exec 3>"$FIFO" ) 2>/dev/null; then
+            exec 3>"$FIFO"
+            break
+        fi
+        # Vérifie que ffmpeg est toujours vivant
+        if ! kill -0 "$FFMPEG_PID" 2>/dev/null; then
+            log "❌  ffmpeg mort avant ouverture du FIFO — abandon"
+            return 1
+        fi
+        (( waited++ ))
+        if [[ $waited -ge 20 ]]; then
+            log "❌  Timeout ouverture FIFO après ${waited}s — ffmpeg ne répond pas"
+            kill "$FFMPEG_PID" 2>/dev/null || true
+            return 1
+        fi
+        sleep 0.5
+    done
 
-    log "✅ Streamer opérationnel sans latence (PID $FFMPEG_PID)"
+    log "🔌  Streamer démarré (PID $FFMPEG_PID)"
 }
 
 check_streamer() {
@@ -91,7 +105,7 @@ stream_to_fifo() {
     local af_opts=()
     [[ -n "$gain" ]] && af_opts=(-af "volume=${gain}")
     ffmpeg -hide_banner -nostdin \
-        -re -i "$file" \
+        -i "$file" \
         -vn \
         -map 0:a:0 \
         "${af_opts[@]}" \
@@ -495,7 +509,7 @@ play_file() {
     has_video=$(ffprobe -v quiet -select_streams v \
                 -show_entries stream=codec_type -of csv=p=0 "$file" 2>/dev/null | head -n 1)
     if [[ "$has_video" == "video" ]]; then
-        ffmpeg -hide_banner -nostdin -re -i "$file" -map 0:v:0 -c:v copy \
+        ffmpeg -hide_banner -nostdin -i "$file" -map 0:v:0 -c:v copy \
                -f image2 "$COVER_ART" -y 2>/dev/null || true
     else
         rm -f "$COVER_ART"; touch "$COVER_ART"
