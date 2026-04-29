@@ -565,10 +565,6 @@ let anchorAudioTime    = 0;
 // Réutilise le dernier buffer mesuré pour que la progression en pause
 // soit cohérente avec la progression après play (évite le saut au démarrage).
 let icecastBufferDelay = parseFloat(localStorage.getItem('icecastBufferDelay') || '0');
-let lagAtPlayStart     = 0;
-let calibrationSamples = [];
-let lastTitleChangeLocalTime = 0;
-let lastTitleChangeTitle = "";
 
 let STREAM_URL = '/icecast/radio-public'; // fallback par défaut
 
@@ -643,58 +639,61 @@ audio.addEventListener('waiting', () => {
     }
 });
 
+let lagAtPlayStart = 0;
+
 audio.addEventListener('playing', () => {
     clearTimeout(waitingTimeout);
     playBtn.classList.remove('loading');
     playBtn.classList.add('playing');
-    // On ne peut pas mesurer le lag ici — audio.currentTime est inutilisable sur un live
-    // La calibration se fait via les changements de titre détectés dans calibrateDelay()
-    debugDiv.textContent = `lag: ${icecastBufferDelay.toFixed(1)}s (en attente calibration...)`;
-    debugDiv.style.display = 'block';
+
+    const now = Date.now() / 1000;
+    const elapsed = now - baseLocalTime;
+    const activeData = displayedPodcastData || currentPodcastData;
+    if (!activeData) return;
+    const start = new Date(activeData.startedAt).getTime() / 1000;
+
+    // serverPos = ce que le serveur diffuse maintenant
+    const serverPos = (baseServerNow + elapsed) - start;
+    // audio.currentTime = ce que le navigateur joue maintenant (≈ 0 au démarrage)
+    // Le lag = différence entre les deux
+    lagAtPlayStart = serverPos - audio.currentTime;
+
+    anchorAudioTime = audio.currentTime;
+    anchorServerPos = audio.currentTime; // l'ancre suit audio.currentTime, pas serverPos
+
+    icecastBufferDelay = lagAtPlayStart;
+    localStorage.setItem('icecastBufferDelay', lagAtPlayStart.toFixed(2));
     calibrationSamples = [];
-    setTimeout(calibrateDelay, 2000);
+    setTimeout(calibrateDelay, 3000);
+
+    debugDiv.textContent = `lag initial: ${lagAtPlayStart.toFixed(1)}s`;
 });
 
+// Calibrateur : compare audio.currentTime à ce qu'on attend côté serveur
+// Le delta stable = délai réel Paris→client (réseau + Icecast + navigateur)
+let calibrationSamples = [];
+
 function calibrateDelay() {
-    if (audio.paused) return;
+    if (audio.paused || anchorAudioTime === 0) return;
+    const now = Date.now() / 1000;
+    const elapsed = now - baseLocalTime;
+    const activeData = displayedPodcastData || currentPodcastData;
+    if (!activeData) return;
+    const start = new Date(activeData.startedAt).getTime() / 1000;
 
-    // Si on a un changement de titre récent non encore confirmé dans l'audio
-    if (lastTitleChangeLocalTime > 0 && lastTitleChangeTitle === (displayedPodcastData?.title)) {
-        const now = Date.now() / 1000;
-        const timeSinceChange = now - lastTitleChangeLocalTime;
+    const serverPos = (baseServerNow + elapsed) - start;
+    const currentLag = serverPos - audio.currentTime;
 
-        // On cherche à savoir combien de temps après le signal JSON
-        // le changement est réellement audible.
-        // On utilise la progression serveur pour estimer :
-        // si serverPos - startedAt ≈ 0, le morceau vient juste de commencer côté serveur.
-        // Le lag = temps écoulé localement depuis le signal JSON jusqu'à ce que
-        // la position serveur soit ≈ 0 (début du nouveau morceau + lag).
-        
-        const elapsed = now - baseLocalTime;
-        const activeData = currentPodcastData;
-        if (activeData) {
-            const start = new Date(activeData.startedAt).getTime() / 1000;
-            const serverPos = (baseServerNow + elapsed) - start;
-            
-            // serverPos progresse depuis 0 au début du morceau.
-            // Le lag réel = timeSinceChange - serverPos
-            // (car serverPos secondes se sont déjà écoulées côté serveur
-            //  depuis le début du morceau au moment du signal JSON)
-            if (serverPos >= 0 && serverPos < 60 && timeSinceChange > 0) {
-                const estimatedLag = timeSinceChange - serverPos;
-                if (estimatedLag > 0 && estimatedLag < 30) {
-                    calibrationSamples.push(estimatedLag);
-                    if (calibrationSamples.length > 6) calibrationSamples.shift();
-                    const sorted = [...calibrationSamples].sort((a, b) => a - b);
-                    const median = sorted[Math.floor(sorted.length / 2)];
-                    icecastBufferDelay = median;
-                    localStorage.setItem('icecastBufferDelay', median.toFixed(2));
-                    debugDiv.textContent = `lag: ${median.toFixed(1)}s (${calibrationSamples.length} samples)`;
-                }
-            }
-        }
+    if (currentLag > 0 && currentLag < 30) {
+        calibrationSamples.push(currentLag);
+        if (calibrationSamples.length > 8) calibrationSamples.shift();
+        const sorted = [...calibrationSamples].sort((a, b) => a - b);
+        const median = sorted[Math.floor(sorted.length / 2)];
+        icecastBufferDelay = median;
+        localStorage.setItem('icecastBufferDelay', median.toFixed(2));
+        debugDiv.textContent = `lag: ${median.toFixed(1)}s (${calibrationSamples.length} samples)`;
     }
-    if (!audio.paused) setTimeout(calibrateDelay, 500);
+    if (!audio.paused) setTimeout(calibrateDelay, 2000);
 }
 
 function normalizeVtt(url) {
@@ -795,21 +794,24 @@ async function fetchMetadata() {
         }
         
         const trackChanged = data.title !== lastTrackTitle;
+        const vttChanged = normalizeVtt(data.vtt) !== prevVtt; // prevVtt capturé avant l'écrasement
+        
+        let pendingTrackChange = false;
 
         if (trackChanged || vttChanged) {
+            if (pendingTrackChange) return;
+            pendingTrackChange = true;
             lastTrackTitle = data.title;
-
-            // On note l'heure locale exacte où le serveur a signalé ce changement
-            lastTitleChangeLocalTime = Date.now() / 1000;
-            lastTitleChangeTitle = data.title;
-
-            const measuredLag = icecastBufferDelay > 0 ? icecastBufferDelay : 0;
-            const delay = measuredLag * 1000;
+            
+            const measuredLag = parseFloat(localStorage.getItem('icecastBufferDelay') || '0');
+            const delay = Math.max(measuredLag, 0.5) * 1000;
 
             setTimeout(async () => {
+                pendingTrackChange = false;
                 subDiv.innerHTML = "";
                 cuesIndex = [];
                 hasSubtitles = false;
+                
                 const isNewShow = data.event !== displayedPodcastData?.event;
                 if (isNewShow && (audio.paused || audio.ended)) {
                     audio.src = STREAM_URL + '?t=' + Date.now();
@@ -817,12 +819,16 @@ async function fetchMetadata() {
                 displayedPodcastData = data;
                 updateUI(data);
                 anchorAudioTime = 0;
+
                 if (data.vtt) {
                     const vttRes = await fetch(data.vtt);
                     cuesIndex = parseVTT(await vttRes.text());
                     hasSubtitles = true;
                 }
             }, delay);
+        } else if (!data.vtt) {
+            hasSubtitles = false;
+            cuesIndex = [];
         }
     } catch (e) { console.error("Metadata Error:", e); }
     finally { isFetching = false; }
@@ -837,11 +843,17 @@ function animate() {
     const start = new Date(activeData.startedAt).getTime() / 1000;
     const durationRaw = activeData.duration_raw || 1;
 
-    // Position = ce que le serveur joue, moins le lag de transit
-    const currentPos = Math.max(0, Math.min(
-        (baseServerNow + elapsed) - start - icecastBufferDelay,
-        durationRaw
-    ));
+    let currentPos;
+
+    if (!audio.paused && anchorAudioTime > 0) {
+        // audio.currentTime est la vérité absolue de ce qui sort des haut-parleurs
+        currentPos = audio.currentTime - anchorAudioTime + anchorServerPos;
+    } else {
+        const elapsed = now - baseLocalTime;
+        currentPos = (baseServerNow + elapsed) - start - icecastBufferDelay;
+    }
+
+    currentPos = Math.max(0, Math.min(currentPos, durationRaw));
 
     progressFill.style.width = (currentPos / durationRaw) * 100 + "%";
     time.innerText = formatTime(currentPos);
@@ -852,8 +864,12 @@ function animate() {
         const newText = currentCue ? currentCue.text : "";
         if (subDiv.innerHTML !== newText) subDiv.innerHTML = newText;
     } else if (!hasSubtitles || displayedPodcastData?.event === "Musique") {
+        const durationRaw = activeData?.duration_raw || 0;
         if (currentPos >= durationRaw || audio.paused) {
-            if (subDiv.innerHTML !== "") { subDiv.innerHTML = ""; cuesIndex = []; }
+            if (subDiv.innerHTML !== "") {
+                subDiv.innerHTML = "";
+                cuesIndex = [];
+            }
         }
     }
     requestAnimationFrame(animate);
