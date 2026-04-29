@@ -654,7 +654,6 @@ audio.addEventListener('playing', () => {
     if (audio.buffered.length > 0) {
         const end = audio.buffered.end(audio.buffered.length - 1);
         icecastBufferDelay = end - audio.currentTime;
-        console.log(end, icecastBufferDelay);
     }
 
     // --- LA CLÉ EST ICI ---
@@ -664,6 +663,7 @@ audio.addEventListener('playing', () => {
     anchorAudioTime = audio.currentTime;
 
     if (offsetAtPlay > 0) {
+        console.log(offsetAtPlay);
         localStorage.setItem('offsetAtPlay', offsetAtPlay.toFixed(2));
     }
 });
