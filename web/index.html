@@ -809,39 +809,34 @@ function animate() {
     const durationRaw = activeData.duration_raw || 1;
     let currentPos;
 
-    if (!audio.paused && anchorAudioTime > 0) {
-        // --- SYNCHRONISATION DIRECTE ---
-        // On prend l'ancre serveur et on ajoute la progression réelle de l'audio
+    // --- CORRECTION ICI ---
+    // On ne synchronise sur l'audio QUE si le son a vraiment démarré (anchorAudioTime > 0)
+    // ET que l'UI n'est pas en train d'afficher le spinner de chargement.
+    if (!audio.paused && anchorAudioTime > 0 && !playBtn.classList.contains('loading')) {
         const audioDelta = audio.currentTime - anchorAudioTime;
         currentPos = anchorServerPos + audioDelta;
     } else {
-        // Fallback en pause (basé sur le temps serveur moins le dernier délai connu)
+        // Pendant le "Loading" ou en "Pause", on reste basé sur l'horloge système
+        // pour que la barre continue d'avancer normalement selon le flux temps réel.
         const now = Date.now() / 1000;
         const elapsed = now - baseLocalTime;
         const start = new Date(activeData.startedAt).getTime() / 1000;
         currentPos = (baseServerNow + elapsed) - start - icecastBufferDelay;
     }
 
-    // Le reste reste identique (Math.min, update UI...)
     currentPos = Math.max(0, Math.min(currentPos, durationRaw));
     
     progressFill.style.width = (currentPos / durationRaw) * 100 + "%";
     time.innerText = formatTime(currentPos);
     duration.innerText = activeData.duration || "--:--";
 
+    // Gestion des sous-titres (inchangée)
     if (hasSubtitles && cuesIndex.length > 0 && !audio.paused) {
         const currentCue = cuesIndex.find(cue => currentPos >= cue.start && currentPos <= cue.end);
         const newText = currentCue ? currentCue.text : "";
         if (subDiv.innerHTML !== newText) subDiv.innerHTML = newText;
-    } else if (!hasSubtitles || displayedPodcastData?.event === "Musique") {
-        const durationRaw = activeData?.duration_raw || 0;
-        if (currentPos >= durationRaw || audio.paused) {
-            if (subDiv.innerHTML !== "") {
-                subDiv.innerHTML = "";
-                cuesIndex = [];
-            }
-        }
     }
+    
     requestAnimationFrame(animate);
 }
 
