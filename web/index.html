@@ -644,6 +644,20 @@ audio.addEventListener('playing', () => {
     playBtn.classList.remove('loading');
     playBtn.classList.add('playing');
 
+    // --- AJOUTEZ / MODIFIEZ CETTE PARTIE ---
+    if (audio.buffered.length > 0) {
+        const end = audio.buffered.end(audio.buffered.length - 1);
+        // C'est ici que Chrome stocke ses 9 secondes
+        icecastBufferDelay = end - audio.currentTime; 
+        
+        // Optionnel : Si vous voulez vraiment réduire le délai (moins de retard)
+        if (icecastBufferDelay > 2) {
+            audio.currentTime = end - 1.5; // On saute vers la fin du buffer
+            icecastBufferDelay = 1.5;      // On met à jour notre variable de décalage
+        }
+    }
+    // ---------------------------------------
+
     const now = Date.now() / 1000;
     const elapsed = now - baseLocalTime;
     const activeData = displayedPodcastData || currentPodcastData;
