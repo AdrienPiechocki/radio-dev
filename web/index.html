@@ -564,7 +564,8 @@ let anchorServerPos    = 0;
 let anchorAudioTime    = 0;
 // Réutilise le dernier buffer mesuré pour que la progression en pause
 // soit cohérente avec la progression après play (évite le saut au démarrage).
-let icecastBufferDelay = parseFloat(localStorage.getItem('icecastBufferDelay') || '0');
+const cachedLag = parseFloat(localStorage.getItem('icecastBufferDelay') || '0');
+let icecastBufferDelay = (cachedLag > 0 && cachedLag < 30) ? cachedLag : 0;
 let lagAtPlayStart     = 0;
 let calibrationSamples = [];
 let lastTitleChangeLocalTime = 0;
