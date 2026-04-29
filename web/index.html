@@ -666,6 +666,13 @@ audio.addEventListener('playing', () => {
     // Mémorise pour que la vue en pause soit alignée dès le prochain chargement
     if (bufferedAhead > 0) localStorage.setItem('icecastBufferDelay', bufferedAhead.toFixed(2));
     debugDiv.textContent = `buffer: ${bufferedAhead.toFixed(1)}s`;
+    if (audio.buffered.length > 0) {
+        const end = audio.buffered.end(audio.buffered.length - 1);
+        const diff = end - audio.currentTime;
+        if (diff > 2) { // Si plus de 2s de retard sur le cache
+            audio.currentTime = end - 0.5; // On saute à la fin moins 500ms
+        }
+    }
 });
 
 function normalizeVtt(url) {
@@ -699,7 +706,7 @@ function parseVTT(vttText) {
 function togglePlay() {
     if (audio.paused) {
         const currentVolume = audio.volume;
-
+        audio.load();
         audio.src = STREAM_URL + '?t=' + Date.now();
         audio.volume = currentVolume;
         audio.play();
