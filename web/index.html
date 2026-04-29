@@ -699,9 +699,7 @@ function togglePlay() {
         audio.play().then(() => {
             if (audio.buffered.length > 0) {
                 const end = audio.buffered.end(audio.buffered.length - 1);
-                if (end - audio.currentTime > 1) { // Si plus de 1s de retard
-                    audio.currentTime = end; // Saut au direct
-                }
+                audio.currentTime = end - 0.5; // Garde juste 500ms de sécurité
             }
         });
         playBtn.classList.remove('playing');
