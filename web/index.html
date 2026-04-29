@@ -831,17 +831,17 @@ function animate() {
     const elapsed = now - baseLocalTime;
     const start = new Date(activeData.startedAt).getTime() / 1000;
     const durationRaw = activeData.duration_raw || 1;
-
+    const ServerPos = activeData.serverNow - new Date(activeData.startedAt).getTime() / 1000;
     let currentPos;
 
     if (!audio.paused && anchorAudioTime > 0) {
         // Si on lit, on suit la progression réelle de la tête de lecture
         const audioDelta = audio.currentTime - anchorAudioTime;
-        currentPos = anchorServerPos + audioDelta;
+        currentPos = ServerPos + audioDelta;
     } else {
         // En pause ou chargement, on se base sur le serveur 
         // MAIS on retire le délai habituel pour que l'UI ne soit pas en avance
-        currentPos = (baseServerNow + elapsed) - start - icecastBufferDelay;
+        currentPos = (baseServerNow + elapsed) - start;
     }
 
     // Sécurité pour ne pas dépasser la fin
