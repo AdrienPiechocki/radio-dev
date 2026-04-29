@@ -599,14 +599,6 @@ audio.addEventListener('ended', () => {
     anchorAudioTime = 0;
 });
 
-audio.addEventListener('seeking', () => {
-    playBtn.classList.add('loading');
-});
-
-audio.addEventListener('seeked', () => {
-    playBtn.classList.remove('loading');
-});
-
 audio.addEventListener('error', (e) => {
     const error = audio.error;
     playBtn.classList.remove('playing', 'loading');
@@ -618,10 +610,7 @@ audio.addEventListener('error', (e) => {
         setTimeout(() => {
             if (audio.paused) return; // L'utilisateur a peut-être voulu pause
             const vol = audio.volume;
-            if (audio.networkState === 3) {
-                audio.src = STREAM_URL;
-                audio.load();
-            }
+            audio.src = STREAM_URL + '?t=' + Date.now();
             audio.volume = vol;
             audio.play().catch(console.error);
         }, 3000);
@@ -632,34 +621,21 @@ let waitingTimeout = null;
 
 audio.addEventListener('waiting', () => {
     if (!audio.paused) {
-
-        let delta = 0;
-
-        if (audio.buffered.length > 0) {
-            const end = audio.buffered.end(audio.buffered.length - 1);
-            delta = end - audio.currentTime;
-        }
-
-        // 🔑 si on est juste en retard → on laisse forceLiveEdge gérer
-        if (delta > 3) return;
-
         playBtn.classList.add('loading');
         playBtn.classList.remove('playing');
 
         waitingTimeout = setTimeout(() => {
             if (!audio.paused && playBtn.classList.contains('loading')) {
                 console.log("Reconnexion du flux...");
-
                 const vol = audio.volume;
-                audio.src = STREAM_URL;
-                audio.load();
+                audio.src = STREAM_URL + '?t=' + Date.now();
                 audio.volume = vol;
                 audio.play().catch(err => {
                     console.error("Échec de la reprise auto:", err);
                     playBtn.classList.remove('playing', 'loading');
                 });
             }
-        }, 5000);
+        }, 5000); 
     }
 });
 
@@ -688,9 +664,6 @@ audio.addEventListener('playing', () => {
 
     if (icecastBufferDelay > 0) {
         localStorage.setItem('icecastBufferDelay', icecastBufferDelay.toFixed(2));
-    }
-    if (icecastBufferDelay > 5) {
-        icecastBufferDelay = 1; // clamp
     }
 });
 
@@ -725,11 +698,9 @@ function parseVTT(vttText) {
 function togglePlay() {
     if (audio.paused) {
         const currentVolume = audio.volume;
-        audio.src = STREAM_URL;
         audio.load();
+        audio.src = STREAM_URL + '?t=' + Date.now();
         audio.volume = currentVolume;
-        audio.preload = "none";
-        audio.crossOrigin = "anonymous";
         audio.play().then(() => {
             // 2. FORCE le saut vers la fin du buffer si Chrome a stocké du son
             setTimeout(() => {
@@ -821,9 +792,7 @@ async function fetchMetadata() {
                 
                 const isNewShow = data.event !== displayedPodcastData?.event;
                 if (isNewShow && (audio.paused || audio.ended)) {
-                    if (!audio.src) {
-                        audio.src = STREAM_URL;
-                    }
+                    audio.src = STREAM_URL + '?t=' + Date.now();
                 }
                 displayedPodcastData = data;
                 updateUI(data);
@@ -1020,29 +989,6 @@ function updateZoomTimeline() {
 
 updateZoomTimeline();
 setInterval(updateZoomTimeline, 60000);
-
-let lastForce = 0;
-
-function forceLiveEdgeSafe() {
-    const now = Date.now();
-
-    // max 1 fois toutes les 5s
-    if (now - lastForce < 5000) return;
-
-    if (audio.buffered.length > 0) {
-        const end = audio.buffered.end(audio.buffered.length - 1);
-        const delta = end - audio.currentTime;
-
-        // seulement si VRAIMENT en retard
-        if (delta > 3) {
-            audio.currentTime = end - 0.2;
-            lastForce = now;
-            console.log("🔧 resync live edge");
-        }
-    }
-}
-
-setInterval(forceLiveEdgeSafe, 1000);
 </script>
 </body>
 </html>
