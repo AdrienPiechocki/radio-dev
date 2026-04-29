@@ -594,20 +594,41 @@ audio.addEventListener('ended', () => {
     playBtn.classList.remove('playing', 'loading');
 });
 
-audio.addEventListener('error', (e) => {
+let retryTimeout = null;
+let isRetrying = false;
+
+audio.addEventListener('error', () => {
     const error = audio.error;
     playBtn.classList.remove('playing', 'loading');
 
-    // Retry automatique après 3s si c'est une erreur réseau
-    if (error.code === 2) {
-        console.warn("Erreur réseau — tentative de reconnexion dans 3s...");
-        setTimeout(() => {
-            if (audio.paused) return; // L'utilisateur a peut-être voulu pause
-            icecastBufferDelay += 3;
+    if (error.code === 2 && !isRetrying) {
+        isRetrying = true;
+
+        console.warn("Erreur réseau — retry dans 3s");
+
+        retryTimeout = setTimeout(() => {
+            retryTimeout = null;
+
+            if (audio.paused) {
+                isRetrying = false;
+                return;
+            }
+
             const vol = audio.volume;
+
+            console.log("🔁 Reconnexion stream...");
             audio.src = STREAM_URL + '?t=' + Date.now();
             audio.volume = vol;
-            audio.play().catch(console.error);
+            icecastBufferDelay += 3;
+            audio.play()
+                .catch(err => {
+                    console.error("Retry échoué:", err);
+                })
+                .finally(() => {
+                    // autorise un nouveau retry seulement après tentative
+                    isRetrying = false;
+                });
+
         }, 3000);
     }
 });
@@ -615,22 +636,29 @@ audio.addEventListener('error', (e) => {
 let waitingTimeout = null;
 
 audio.addEventListener('waiting', () => {
-    if (!audio.paused) {
+    if (!audio.paused && !isRetrying) {
         playBtn.classList.add('loading');
         playBtn.classList.remove('playing');
 
+        clearTimeout(waitingTimeout);
+
         waitingTimeout = setTimeout(() => {
-            if (!audio.paused && playBtn.classList.contains('loading')) {
-                console.log("Reconnexion du flux...");
+            if (!audio.paused && !isRetrying) {
+                isRetrying = true;
+
+                console.log("Reconnexion (waiting)...");
+
                 const vol = audio.volume;
                 audio.src = STREAM_URL + '?t=' + Date.now();
                 audio.volume = vol;
-                audio.play().catch(err => {
-                    console.error("Échec de la reprise auto:", err);
-                    playBtn.classList.remove('playing', 'loading');
-                });
+
+                audio.play()
+                    .catch(console.error)
+                    .finally(() => {
+                        isRetrying = false;
+                    });
             }
-        }, 5000); 
+        }, 5000);
     }
 });
 
