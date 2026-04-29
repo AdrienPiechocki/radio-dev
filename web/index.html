@@ -753,7 +753,7 @@ function updateCoverArt() {
             albumArtContainer.classList.remove('has-cover');
         };
         tempImg.src = getCoverUrl() + "?t=" + Date.now();
-    }, 1000);
+    }, 500);
 }
 
 async function fetchMetadata() {
