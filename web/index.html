@@ -654,7 +654,7 @@ audio.addEventListener('playing', () => {
     if (audio.buffered.length > 0) {
         const end = audio.buffered.end(audio.buffered.length - 1);
         icecastBufferDelay = offsetAtPlay - audio.currentTime;
-        console.log(icecastBufferDelay);
+        console.log(icecastBufferDelay, offsetAtPlay, audio.currentTime);
     }
 
     // --- LA CLÉ EST ICI ---
