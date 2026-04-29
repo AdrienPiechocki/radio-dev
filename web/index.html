@@ -707,7 +707,7 @@ function togglePlay() {
                 if (audio.buffered.length > 0) {
                     const end = audio.buffered.end(audio.buffered.length - 1);
                     if (end - audio.currentTime > 1) { // Si plus de 1s de retard
-                        audio.currentTime = end - 0.2; // Saut au direct
+                        audio.currentTime = end; // Saut au direct
                     }
                 }
             }, 500);
