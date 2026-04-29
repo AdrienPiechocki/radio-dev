@@ -714,8 +714,9 @@ function togglePlay() {
         }
     } else {
         audio.pause();
-        anchorAudioTime = 0;
-        playBtn.classList.remove('playing');
+        // On remet l'ancre à 0 pour que animate() reprenne le calcul basé sur le serveur
+        anchorAudioTime = 0; 
+        playBtn.classList.remove('playing', 'loading'); // Sécurité
         subDiv.innerHTML = "";
     }
 }
