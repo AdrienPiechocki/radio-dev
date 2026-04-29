@@ -660,11 +660,11 @@ audio.addEventListener('playing', () => {
     // --- LA CLÉ EST ICI ---
     // On définit l'ancre de position au moment PRÉCIS où la lecture commence.
     // On prend le temps serveur actuel et on retire le délai de buffer.
-    anchorServerPos = (baseServerNow + (now - baseLocalTime)) - start - icecastBufferDelay;
+    anchorServerPos = (baseServerNow + (now - baseLocalTime)) - start - offsetAtPlay;
     anchorAudioTime = audio.currentTime;
 
-    if (icecastBufferDelay > 0) {
-        localStorage.setItem('icecastBufferDelay', icecastBufferDelay.toFixed(2));
+    if (offsetAtPlay > 0) {
+        localStorage.setItem('offsetAtPlay', offsetAtPlay.toFixed(2));
     }
 });
 
@@ -773,7 +773,7 @@ async function fetchMetadata() {
             pendingTrackChange = true;
             lastTrackTitle = data.title;
             
-            const delay = Math.max(icecastBufferDelay, 0.5) * 1000;
+            const delay = Math.max(offsetAtPlay, 0.5) * 1000;
 
             setTimeout(async () => {
                 pendingTrackChange = false;
@@ -814,7 +814,7 @@ const activeData = displayedPodcastData || currentPodcastData;
 
     let currentPos;
 
-    currentPos = (baseServerNow + elapsed) - start - icecastBufferDelay;
+    currentPos = (baseServerNow + elapsed) - start - offsetAtPlay;
 
     // Sécurité pour ne pas dépasser la fin
     currentPos = Math.max(0, Math.min(currentPos, durationRaw));
