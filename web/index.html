@@ -620,6 +620,7 @@ audio.addEventListener('error', () => {
             audio.src = STREAM_URL + '?t=' + Date.now();
             audio.volume = vol;
             icecastBufferDelay += 3;
+            console.log(icecastBufferDelay);
             audio.play()
                 .catch(err => {
                     console.error("Retry échoué:", err);
