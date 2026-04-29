@@ -47,13 +47,15 @@ start_streamer() {
     rm -f "$FIFO"
     mkfifo "$FIFO"
 
-    # 1. On ouvre le descripteur 3 AVANT de lancer ffmpeg pour éviter le blocage
+    # On ouvre le descripteur 3 en mode lecture/écriture
     exec 3<>"$FIFO"
 
-    # 2. Lancement de ffmpeg
-    # IMPORTANT : Les options -f mp3 et -i pipe:0 doivent être ensemble
+    # Lancement de ffmpeg
+    # -err_detect ignore_err : ignore les erreurs de frame au début
+    # -fflags +nobuffer+flush_packets : envoi immédiat
+    # -id3v2_read_confirm 0 : ne cherche pas les tags ID3 au début
     ffmpeg -loglevel error \
-        -fflags +nobuffer+flush_packets \
+        -fflags +nobuffer+flush_packets+discardcorrupt \
         -flags +low_delay \
         -probesize 32 \
         -analyzeduration 0 \
@@ -90,7 +92,7 @@ stream_to_fifo() {
     local af_opts=()
     [[ -n "$gain" ]] && af_opts=(-af "volume=${gain}")
     ffmpeg -hide_banner -nostdin \
-        -i "$file" \
+        -re -i "$file" \
         -vn \
         -map 0:a:0 \
         "${af_opts[@]}" \
@@ -494,7 +496,7 @@ play_file() {
     has_video=$(ffprobe -v quiet -select_streams v \
                 -show_entries stream=codec_type -of csv=p=0 "$file" 2>/dev/null | head -n 1)
     if [[ "$has_video" == "video" ]]; then
-        ffmpeg -hide_banner -nostdin -i "$file" -map 0:v:0 -c:v copy \
+        ffmpeg -hide_banner -nostdin -re -i "$file" -map 0:v:0 -c:v copy \
                -f image2 "$COVER_ART" -y 2>/dev/null || true
     else
         rm -f "$COVER_ART"; touch "$COVER_ART"
