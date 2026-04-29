@@ -671,13 +671,21 @@ function currentPos(data) {
 // morceau. À cet instant, le serveur a déjà joué (serverNow - startedAt) secondes
 // de ce morceau. Ce delta est le lag réel.
 function syncNow() {
-    if (!currentData) return;
-    const start = new Date(currentData.startedAt).getTime() / 1000;
-    const measured = serverNow() - start;
-    if (measured > 0 && measured < 60) {
+    if (!currentData) {
+        renderDebug('sync: pas de données serveur');
+        return;
+    }
+    const start    = new Date(currentData.startedAt).getTime() / 1000;
+    const srvNow   = serverNow();
+    const measured = srvNow - start;
+
+    // Toujours afficher ce qu'on mesure pour diagnostiquer
+    renderDebug(`sync → lag mesuré: ${measured.toFixed(1)}s`);
+
+    if (measured > 0 && measured < 300) {
         lag = measured;
         localStorage.setItem('icecastLag', lag.toFixed(2));
-        renderDebug(`lag: ${lag.toFixed(1)}s ✓ (sync manuel)`);
+        renderDebug(`lag: ${lag.toFixed(1)}s ✓`);
         syncBtn.textContent = `🎯 ${lag.toFixed(1)}s`;
     }
 }
