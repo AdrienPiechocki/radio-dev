@@ -778,23 +778,27 @@ async function fetchMetadata() {
             pendingTrackChange = true;
             lastTrackTitle = data.title;
             
-            pendingTrackChange = false;
-            subDiv.innerHTML = "";
-            cuesIndex = [];
-            hasSubtitles = false;
-            
-            const isNewShow = data.event !== displayedPodcastData?.event;
-            if (isNewShow && (audio.paused || audio.ended)) {
-                audio.src = STREAM_URL + '?t=' + Date.now();
-            }
-            displayedPodcastData = data;
-            updateUI(data);
+            const delay = Math.max(icecastBufferDelay, 0.5) * 1000;
 
-            if (data.vtt) {
-                const vttRes = await fetch(data.vtt);
-                cuesIndex = parseVTT(await vttRes.text());
-                hasSubtitles = true;
-            }
+            setTimeout(async () => {
+                pendingTrackChange = false;
+                subDiv.innerHTML = "";
+                cuesIndex = [];
+                hasSubtitles = false;
+                
+                const isNewShow = data.event !== displayedPodcastData?.event;
+                if (isNewShow && (audio.paused || audio.ended)) {
+                    audio.src = STREAM_URL + '?t=' + Date.now();
+                }
+                displayedPodcastData = data;
+                updateUI(data);
+
+                if (data.vtt) {
+                    const vttRes = await fetch(data.vtt);
+                    cuesIndex = parseVTT(await vttRes.text());
+                    hasSubtitles = true;
+                }
+            }, delay);
         } else if (!data.vtt) {
             hasSubtitles = false;
             cuesIndex = [];
@@ -815,7 +819,7 @@ function animate() {
     const ServerPos = activeData.serverNow - start;
 
     currentPos = ServerPos + (audio.currentTime || 0);
-
+    icecastBufferDelay = currentPos
     // Sécurité pour ne pas dépasser la fin
     currentPos = Math.max(0, Math.min(currentPos, durationRaw));
 
