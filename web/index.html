@@ -661,8 +661,6 @@ audio.addEventListener('playing', () => {
 
     // Lance la calibration 3s après le démarrage (laisser le buffer se stabiliser)
     setTimeout(calibrateDelay, 3000);
-
-    debugDiv.textContent = `buffer: ${bufferedAhead.toFixed(1)}s`;
 });
 
 // Calibrateur : compare audio.currentTime à ce qu'on attend côté serveur
