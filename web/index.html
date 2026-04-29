@@ -821,6 +821,8 @@ const activeData = displayedPodcastData || currentPodcastData;
     let currentPos;
 
     currentPos = (baseServerNow + elapsed) - start - icecastBufferDelay;
+    console.log(currentPos);
+    console.log(activeData.serverNow + audio.currentTime);
 
     // Sécurité pour ne pas dépasser la fin
     currentPos = Math.max(0, Math.min(currentPos, durationRaw));
