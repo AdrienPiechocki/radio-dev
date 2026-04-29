@@ -599,6 +599,14 @@ audio.addEventListener('ended', () => {
     anchorAudioTime = 0;
 });
 
+audio.addEventListener('seeking', () => {
+    playBtn.classList.add('loading');
+});
+
+audio.addEventListener('seeked', () => {
+    playBtn.classList.remove('loading');
+});
+
 audio.addEventListener('error', (e) => {
     const error = audio.error;
     playBtn.classList.remove('playing', 'loading');
@@ -610,8 +618,9 @@ audio.addEventListener('error', (e) => {
         setTimeout(() => {
             if (audio.paused) return; // L'utilisateur a peut-être voulu pause
             const vol = audio.volume;
-            if (!audio.src) {
+            if (audio.networkState === 3) {
                 audio.src = STREAM_URL;
+                audio.load();
             }
             audio.volume = vol;
             audio.play().catch(console.error);
@@ -622,6 +631,7 @@ audio.addEventListener('error', (e) => {
 let waitingTimeout = null;
 
 audio.addEventListener('waiting', () => {
+    if (delta > 3) return; // laisse le resync faire le taf
     if (!audio.paused) {
         playBtn.classList.add('loading');
         playBtn.classList.remove('playing');
@@ -630,8 +640,9 @@ audio.addEventListener('waiting', () => {
             if (!audio.paused && playBtn.classList.contains('loading')) {
                 console.log("Reconnexion du flux...");
                 const vol = audio.volume;
-                if (!audio.src) {
+                if (audio.networkState === 3) {
                     audio.src = STREAM_URL;
+                    audio.load();
                 }
                 audio.volume = vol;
                 audio.play().catch(err => {
@@ -1001,18 +1012,28 @@ function updateZoomTimeline() {
 updateZoomTimeline();
 setInterval(updateZoomTimeline, 60000);
 
-function forceLiveEdge() {
+let lastForce = 0;
+
+function forceLiveEdgeSafe() {
+    const now = Date.now();
+
+    // max 1 fois toutes les 5s
+    if (now - lastForce < 5000) return;
+
     if (audio.buffered.length > 0) {
         const end = audio.buffered.end(audio.buffered.length - 1);
         const delta = end - audio.currentTime;
 
-        if (delta > 1) {
-            audio.currentTime = end - 0.1;
+        // seulement si VRAIMENT en retard
+        if (delta > 3) {
+            audio.currentTime = end - 0.2;
+            lastForce = now;
+            console.log("🔧 resync live edge");
         }
     }
 }
 
-setInterval(forceLiveEdge, 1000);
+setInterval(forceLiveEdgeSafe, 1000);
 </script>
 </body>
 </html>
