@@ -739,6 +739,7 @@ const coverEmoji = document.getElementById('cover-emoji');
 const albumArtContainer = document.getElementById('album-art-container');
 
 function updateCoverArt() {
+    const delay = Math.max(icecastBufferDelay, 0.5) * 1000;
     setTimeout(() => {
         const tempImg = new Image();
         tempImg.onload = () => {
@@ -753,7 +754,7 @@ function updateCoverArt() {
             albumArtContainer.classList.remove('has-cover');
         };
         tempImg.src = getCoverUrl() + "?t=" + Date.now();
-    }, 500);
+    }, delay);
 }
 
 async function fetchMetadata() {
