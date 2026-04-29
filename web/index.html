@@ -639,8 +639,6 @@ audio.addEventListener('waiting', () => {
     }
 });
 
-let lagAtPlayStart = 0;
-
 audio.addEventListener('playing', () => {
     clearTimeout(waitingTimeout);
     playBtn.classList.remove('loading');
@@ -652,21 +650,19 @@ audio.addEventListener('playing', () => {
     if (!activeData) return;
     const start = new Date(activeData.startedAt).getTime() / 1000;
 
-    // serverPos = ce que le serveur diffuse maintenant
+    const bufferedAhead = (audio.buffered.length > 0)
+        ? audio.buffered.end(audio.buffered.length - 1) - audio.currentTime
+        : 0;
+
     const serverPos = (baseServerNow + elapsed) - start;
-    // audio.currentTime = ce que le navigateur joue maintenant (≈ 0 au démarrage)
-    // Le lag = différence entre les deux
-    lagAtPlayStart = serverPos - audio.currentTime;
-
+    anchorServerPos = serverPos - bufferedAhead;
     anchorAudioTime = audio.currentTime;
-    anchorServerPos = audio.currentTime; // l'ancre suit audio.currentTime, pas serverPos
+    icecastBufferDelay = bufferedAhead;
 
-    icecastBufferDelay = lagAtPlayStart;
-    localStorage.setItem('icecastBufferDelay', lagAtPlayStart.toFixed(2));
-    calibrationSamples = [];
+    // Lance la calibration 3s après le démarrage (laisser le buffer se stabiliser)
     setTimeout(calibrateDelay, 3000);
 
-    debugDiv.textContent = `lag initial: ${lagAtPlayStart.toFixed(1)}s`;
+    debugDiv.textContent = `buffer: ${bufferedAhead.toFixed(1)}s`;
 });
 
 // Calibrateur : compare audio.currentTime à ce qu'on attend côté serveur
@@ -675,24 +671,38 @@ let calibrationSamples = [];
 
 function calibrateDelay() {
     if (audio.paused || anchorAudioTime === 0) return;
+
     const now = Date.now() / 1000;
     const elapsed = now - baseLocalTime;
     const activeData = displayedPodcastData || currentPodcastData;
     if (!activeData) return;
+
     const start = new Date(activeData.startedAt).getTime() / 1000;
-
     const serverPos = (baseServerNow + elapsed) - start;
-    const currentLag = serverPos - audio.currentTime;
+    const audioDelta = audio.currentTime - anchorAudioTime;
+    const audioPos = anchorServerPos + audioDelta;
 
-    if (currentLag > 0 && currentLag < 30) {
-        calibrationSamples.push(currentLag);
-        if (calibrationSamples.length > 8) calibrationSamples.shift();
+    // Le décalage = ce que le serveur croit jouer - ce qui sort réellement
+    const lag = serverPos - audioPos;
+
+    if (lag > 0 && lag < 30) { // sanity check
+        calibrationSamples.push(lag);
+        if (calibrationSamples.length > 10) calibrationSamples.shift();
+
+        // Médiane pour ignorer les outliers
         const sorted = [...calibrationSamples].sort((a, b) => a - b);
         const median = sorted[Math.floor(sorted.length / 2)];
+
         icecastBufferDelay = median;
+        // Recalibrer l'ancre avec le vrai décalage
+        anchorServerPos = serverPos - median;
+        anchorAudioTime = audio.currentTime;
+
         localStorage.setItem('icecastBufferDelay', median.toFixed(2));
-        debugDiv.textContent = `lag: ${median.toFixed(1)}s (${calibrationSamples.length} samples)`;
+        debugDiv.textContent = `lag mesuré: ${median.toFixed(1)}s (${calibrationSamples.length} samples)`;
     }
+
+    // Continue à calibrer toutes les 2s tant que l'audio joue
     if (!audio.paused) setTimeout(calibrateDelay, 2000);
 }
 
@@ -846,10 +856,9 @@ function animate() {
     let currentPos;
 
     if (!audio.paused && anchorAudioTime > 0) {
-        // audio.currentTime est la vérité absolue de ce qui sort des haut-parleurs
-        currentPos = audio.currentTime - anchorAudioTime + anchorServerPos;
+        const audioDelta = audio.currentTime - anchorAudioTime;
+        currentPos = anchorServerPos + audioDelta;
     } else {
-        const elapsed = now - baseLocalTime;
         currentPos = (baseServerNow + elapsed) - start - icecastBufferDelay;
     }
 
