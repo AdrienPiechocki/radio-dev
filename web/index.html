@@ -818,7 +818,7 @@ function animate() {
     let currentPos;
     const ServerPos = activeData.serverNow - start;
 
-    currentPos = ServerPos;
+    currentPos = ServerPos + (audio.currentTime || 0);
 
     // Sécurité pour ne pas dépasser la fin
     currentPos = Math.max(0, Math.min(currentPos, durationRaw));
