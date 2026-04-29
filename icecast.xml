@@ -14,7 +14,7 @@
     <header-timeout>15</header-timeout>
     <source-timeout>30</source-timeout>
     <burst-on-connect>1</burst-on-connect>
-    <burst-size>65535</burst-size>
+    <burst-size>262144</burst-size>
   </limits>
 
   <authentication>
