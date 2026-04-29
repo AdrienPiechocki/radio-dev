@@ -702,19 +702,15 @@ function togglePlay() {
         audio.src = STREAM_URL + '?t=' + Date.now();
         audio.volume = currentVolume;
         audio.play().then(() => {
-            // On attend 1 seconde pour laisser le temps au buffer de se remplir
+            // 2. FORCE le saut vers la fin du buffer si Chrome a stocké du son
             setTimeout(() => {
                 if (audio.buffered.length > 0) {
                     const end = audio.buffered.end(audio.buffered.length - 1);
-                    const diff = end - audio.currentTime;
-                    
-                    // Si on a plus de 2 secondes de retard (le fameux buffer de Chrome)
-                    if (diff > 2) {
-                        console.log(`Correction du décalage : ${diff}s`);
-                        audio.currentTime = end - 0.5; // On saute à 500ms du direct
+                    if (end - audio.currentTime > 1) { // Si plus de 1s de retard
+                        audio.currentTime = end - 0.2; // Saut au direct
                     }
                 }
-            }, 1000);
+            }, 500);
         });
         playBtn.classList.remove('playing');
         playBtn.classList.add('loading');
