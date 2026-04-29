@@ -799,15 +799,7 @@ function animate() {
     const ServerPos = activeData.serverNow - start;
     let currentPos;
 
-    if (!audio.paused) {
-        // Si on lit, on suit la progression réelle de la tête de lecture
-        const audioDelta = audio.currentTime - anchorAudioTime;
-        currentPos = ServerPos + audioDelta;
-    } else {
-        // En pause ou chargement, on se base sur le serveur 
-        // MAIS on retire le délai habituel pour que l'UI ne soit pas en avance
-        currentPos = (baseServerNow + elapsed) - start;
-    }
+    currentPos = (baseServerNow + elapsed) - start;
 
     // Sécurité pour ne pas dépasser la fin
     currentPos = Math.max(0, Math.min(currentPos, durationRaw));
